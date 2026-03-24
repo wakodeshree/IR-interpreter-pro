@@ -41,7 +41,7 @@ def is_scale_number(val, mode):
 # --- 2. INTERFACE ---
 st.set_page_config(page_title="PhD IR Dashboard", layout="wide")
 st.title("🔬 Advanced IR Interpretation Engine")
-st.write("Full-spectrum analysis based on Table 2.3")
+st.write("Full-spectrum analysis)
 
 uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
 
@@ -49,7 +49,7 @@ if uploaded_file:
     img = Image.open(uploaded_file)
     st.image(img, use_container_width=True)
     
-    if st.button("🚀 Run Molecular Analysis"):
+    if st.button("🚀 Run Analysis"):
         with st.spinner("Processing..."):
             reader = easyocr.Reader(['en'])
             results = reader.readtext(np.array(img), rotation_info=[90, 270])
