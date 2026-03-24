@@ -5,9 +5,9 @@ import easyocr
 from PIL import Image
 import re
 
-# --- 1. THE COMPLETE IR DATABASE (WITH RANGES) ---
+# --- 1. THE COMPLETE IR DATABASE ---
 IR_DB = {
-    # C-H Region
+        # C-H Region
     "Alkane C-H (stretch)": [2850, 3000, "Strong"],
     "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
     "Aromatic C-H (stretch)": [3010, 3050, "Medium"],
@@ -48,26 +48,36 @@ STRUCTURE_LOGIC = {
     "Carboxylic Acid": ["Carboxylic Acid C=O", "Carboxylic Acid O-H"],
     "Ester": ["Ester C=O", "C-O Stretch"],
     "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
-    "Ketone": ["Ketone C=O"]
+    "Ketone": ["Ketone C=O"],
+    "Nitro Compound": ["Nitro (-NO2)"],
+    "Amide": ["Amide C=O", "Amine/Amide N-H"]
 }
 
-st.set_page_config(page_title="IR Interpreter", layout="wide")
-st.title("🔬IR Interpreter Engine")
+st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
+st.title("🔬 IR Interpretation Engine")
+st.markdown("---")
 
-target_structure = st.selectbox("Select Structure to Verify:", list(STRUCTURE_LOGIC.keys()))
-uploaded_file = st.file_uploader("Upload IR Image", type=['png', 'jpg', 'jpeg'])
+# --- 3. INTERFACE ---
+with st.sidebar:
+    st.header("Settings")
+    target_structure = st.selectbox("Select Structure to Verify:", list(STRUCTURE_LOGIC.keys()))
+    st.info("The filter will only show peaks relevant to the selected structure.")
+
+uploaded_file = st.file_uploader("Upload IR Image (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
     img = Image.open(uploaded_file)
     st.image(img, use_container_width=True)
     
-    if st.button("🚀 Run Analysis"):
-        with st.spinner("Extracting peaks..."):
+    if st.button("🚀 Run Full Analysis"):
+        with st.spinner("Extracting chemical data and filtering noise..."):
             reader = easyocr.Reader(['en'])
+            # rotation_info handles vertical Shimadzu labels
             results = reader.readtext(np.array(img), rotation_info=[90, 270])
             
             peaks_found = []
-            scale_ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500]
+            # Scale filter: Ignore standard axis labels
+            scale_ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
             
             for (bbox, text, prob) in results:
                 clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
@@ -82,7 +92,7 @@ if uploaded_file:
                                 peaks_found.append({
                                     "Experimental Peak": val, 
                                     "Functional Group": group,
-                                    "Literature Range": f"{r[0]} - {r[1]}"  # Added Range back
+                                    "Literature Range": f"{r[0]} - {r[1]}"
                                 })
                 except: continue
 
@@ -90,35 +100,27 @@ if uploaded_file:
                 full_df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Experimental Peak"])
                 req_groups = STRUCTURE_LOGIC[target_structure]
                 
+                # Filter Logic
                 if target_structure == "All Peaks (No Filter)":
                     display_df = full_df
                 else:
                     display_df = full_df[full_df["Functional Group"].isin(req_groups)]
 
-                st.subheader(f"📊 Results for: {target_structure}")
+                st.subheader(f"✅ Results for: {target_structure}")
+                
                 if not display_df.empty:
-                    # Display table with the Range column
-                    st.table(display_df.sort_values("Experimental Peak", ascending=False))
+                    final_df = display_df.sort_values("Experimental Peak", ascending=False)
+                    st.table(final_df)
                     
-                    # Logic Check
-                    found_set = set(display_df["Functional Group"].tolist())
-                    missing = set(req_groups) - found_set
-                    if not missing and target_structure != "All Peaks (No Filter)":
-                        st.success(f"🎯 Structural Match! All expected peaks for {target_structure} were detected.")
+                    # --- DOWNLOAD SECTION ---
+                    csv = final_df.to_csv(index=False).encode('utf-8')
+                    st.download_button(
+                        label="📥 Download Analysis Report",
+                        data=csv,
+                        file_name=f"IR_Analysis_{target_structure.replace(' ', '_')}.csv",
+                        mime="text/csv",
+                    )
                 else:
                     st.error(f"No peaks matching the {target_structure} pattern were found.")
             else:
-                st.warning("No peaks detected. Ensure the numerical labels are clear.")
-  st.divider()
-  st.subheader("📥 Export Analysis")
-                
-                # Convert the displayed results to CSV
-                csv = display_df.to_csv(index=False).encode('utf-8')
-                
-                # Create the Download Button
-                st.download_button(
-                    label="Download Report as CSV",
-                    data=csv,
-                    file_name=f"IR_Analysis_{target_structure.replace(' ', '_')}.csv",
-                    mime="text/csv",
-                )
+                st.warning("No peaks detected. Ensure the numerical labels are clear on the graph.")
