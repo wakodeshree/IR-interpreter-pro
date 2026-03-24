@@ -109,3 +109,17 @@ if uploaded_file:
                     st.error(f"No peaks matching the {target_structure} pattern were found.")
             else:
                 st.warning("No peaks detected. Ensure the numerical labels are clear.")
+                # --- DOWNLOAD SECTION ---
+                st.divider()
+                st.subheader("📥 Export Analysis")
+                
+                # Convert the displayed results to CSV
+                csv = display_df.to_csv(index=False).encode('utf-8')
+                
+                # Create the Download Button
+                st.download_button(
+                    label="Download Report as CSV",
+                    data=csv,
+                    file_name=f"IR_Analysis_{target_structure.replace(' ', '_')}.csv",
+                    mime="text/csv",
+                )
