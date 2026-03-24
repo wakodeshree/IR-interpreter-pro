@@ -7,7 +7,7 @@ import io, re
 
 # --- 1. OFFICIAL DATABASE (Table 2.3) ---
 # Format: "Group Name": [Min_Range, Max_Range, "Description/Shape"]
-   Official Database = {
+   Official Database= {
     # C-H Region
     "Alkane C-H (stretch)": [2850, 3000, "Strong"],
     "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
