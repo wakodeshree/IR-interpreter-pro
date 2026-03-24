@@ -6,7 +6,7 @@ from PIL import Image, ImageOps, ImageEnhance
 import io, re
 
 # --- CONFIG ---
-st.set_page_config(page_title="IR Structure Predictor Pro", layout="narrow")
+st.set_page_config(page_title="IR Structure Predictor Pro", layout="wide")
 st.title("🔬 IR Structure Predictor Pro")
 st.markdown("Automated Peak Detection & Advanced Substitution Analysis")
 
