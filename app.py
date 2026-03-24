@@ -120,21 +120,7 @@ if uploaded_file:
                     st.info("✅ **Pattern: Para-disubstituted Benzene**")
                 else:
                     st.write("No clear substitution pattern detected in 600-900 cm⁻¹.")
-                    # --- ADD THIS TO YOUR STRUCTURAL LOGIC SECTION ---
-# Nitro Compound Logic
-if "Nitro (-NO2)" in groups:
-    st.info("✅ **Structure Identified: Nitro Compound** (Look for two strong peaks near 1530 and 1350)")
-
-# Amide Logic (C=O + N-H)
-if "Amide (C=O)" in groups and "Amine/Amide N-H" in groups:
-    st.success("🎯 **Predicted Structure: Amide** (Combined Carbonyl and N-H signals)")
-
-# Alkyne Logic (Check for terminal vs internal)
-if "Alkyne C-H (sp)" in groups:
-    st.success("🎯 **Predicted Structure: Terminal Alkyne** (≡C-H detected at ~3300)")
-elif "Alkyne (C≡C)" in groups:
-    st.info("🎯 **Predicted Structure: Internal Alkyne** (C≡C detected without 3300 peak)")
-                
+                    # --- ADD THIS TO YOUR STRUCTURAL LOGIC SECTION ---   
                 # Download results
                 csv = df.to_csv(index=False).encode('utf-8')
                 st.download_button("📥 Download Report", data=csv, file_name="IR_Report.csv")
