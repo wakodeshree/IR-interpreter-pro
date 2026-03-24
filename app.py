@@ -47,9 +47,9 @@ STRUCTURE_LOGIC = {
     "Carboxylic Acid": ["Carboxylic Acid C=O", "Carboxylic Acid O-H"],
     "Ester": ["Ester C=O", "C-O Stretch"],
     "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
-    "Ketone": ["Ketone C=O"]
-    "Amine/Amide N-H": ["Amine/Amide N-H"]
-    "Nitrile (C≡N)": ["Nitrile (C≡N)"]
+    "Ketone": ["Ketone C=O"],
+    "Amine/Amide N-H": ["Amine/Amide N-H"],
+    "Nitrile (C≡N)": ["Nitrile (C≡N)"],
     "Alkyne (C≡C)": ["Alkyne (C≡C)"]       
 }
 
