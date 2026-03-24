@@ -109,9 +109,8 @@ if uploaded_file:
                     st.error(f"No peaks matching the {target_structure} pattern were found.")
             else:
                 st.warning("No peaks detected. Ensure the numerical labels are clear.")
-                # --- DOWNLOAD SECTION ---
-                st.divider()
-                st.subheader("📥 Export Analysis")
+  st.divider()
+  st.subheader("📥 Export Analysis")
                 
                 # Convert the displayed results to CSV
                 csv = display_df.to_csv(index=False).encode('utf-8')
