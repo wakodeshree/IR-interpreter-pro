@@ -1,99 +1,95 @@
 import streamlit as st
 import pandas as pd
-import easyocr
 import numpy as np
-from PIL import Image, ImageOps, ImageEnhance
-import io, re
+import easyocr
+from PIL import Image
+import re
 
-# --- 1. OFFICIAL MASTER DATABASE ---
-OFFICIAL_IR_DATABASE = {
-    "Alkane C-H (sp3)": [2850, 2970, "Strong"],
-    "Alkene C-H (sp2)": [3010, 3100, "Medium"],
-    "Aromatic C-H (sp2)": [3000, 3100, "Medium"],
-    "Alkyne C-H (sp)": [3260, 3330, "Strong, Sharp"],
-    "Aldehyde C-H (Fermi)": [2700, 2850, "Weak, 2 bands"],
-    "Nitrile (C≡N)": [2210, 2260, "Medium, Sharp"],
-    "Alkyne (C≡C)": [2100, 2260, "Weak/Medium"],
-    "Ester (C=O)": [1735, 1750, "Strong"],
-    "Aldehyde (C=O)": [1720, 1740, "Strong"],
-    "Ketone (C=O)": [1705, 1725, "Strong"],
-    "Carboxylic Acid (C=O)": [1700, 1720, "Strong"],
-    "Amide (C=O)": [1630, 1690, "Strong"],
-    "Alkene (C=C)": [1600, 1680, "Medium"],
-    "Aromatic (C=C)": [1450, 1600, "Medium"],
-    "Nitro (-NO2)": [1330, 1550, "Strong, Doublet"],
-    "Alcohol/Phenol O-H": [3200, 3650, "Strong, Broad"],
-    "Carboxylic Acid O-H": [2500, 3300, "Very Broad"],
-    "Amine/Amide N-H": [3300, 3500, "Medium"],
-    "C-O Stretch": [1000, 1300, "Strong"],
-    "Arom-Mono": [690, 770, "Strong (700/750)"],
-    "Arom-Para": [800, 860, "Strong (825)"]
+# --- 1. THE COMPLETE IR DATABASE (Table 2.3) ---
+IR_DB = {
+    "Alcohol O-H (Broad)": [3200, 3650],
+    "Carboxylic Acid O-H (Very Broad)": [2400, 3400],
+    "Amine/Amide N-H": [3100, 3500],
+    "Alkyne ≡C-H": [3250, 3350],
+    "Aromatic C-H": [3000, 3100],
+    "Alkene =C-H": [3010, 3100],
+    "Alkane C-H": [2850, 2970],
+    "Aldehyde C-H (Fermi Doublet)": [2720, 2850],
+    "Nitrile C≡N": [2240, 2260],
+    "Alkyne C≡C": [2100, 2250],
+    "Acid Chloride/Anhydride C=O": [1760, 1810],
+    "Ester C=O": [1730, 1750],
+    "Aldehyde C=O": [1720, 1740],
+    "Ketone C=O": [1705, 1725],
+    "Carboxylic Acid C=O": [1700, 1725],
+    "Amide C=O": [1630, 1680],
+    "Alkene C=C": [1600, 1680],
+    "Aromatic C=C": [1475, 1600],
+    "Nitro (-NO2)": [1350, 1550],
+    "C-O Stretch (Ether/Ester/Alcohol)": [1000, 1300],
+    "C-Cl (Halide)": [540, 785]
 }
-# --- 2. INTERFACE ---
-st.set_page_config(page_title="PhD IR Dashboard", layout="wide")
-st.title("🔬 Advanced IR Interpretation Engine")
-st.write("Full spectrum analysis)
 
-uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
+# --- 2. THE CLEANING ENGINE ---
+def is_scale(val):
+    """Ignores standard IR axis numbers"""
+    scale_markers = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
+    return int(val) in scale_markers if val % 1 == 0 else False
+
+# --- 3. APP INTERFACE ---
+st.set_page_config(page_title="Professional IR Interpreter", layout="wide")
+st.title("🔬 Professional IR Interpretation Engine")
+st.write("Upload your IR graph to detect peaks and match them against the official database.")
+
+uploaded_file = st.file_uploader("Upload IR Image (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
     img = Image.open(uploaded_file)
-    st.image(img, use_container_width=True)
+    st.image(img, caption="Uploaded Spectrum", use_container_width=True)
     
-    if st.button("🚀 Run Analysis"):
-        with st.spinner("Processing..."):
+    if st.button("🚀 Analyze Spectrum"):
+        with st.spinner("Scanning for peaks and matching data..."):
+            # Initialize OCR for vertical labels
             reader = easyocr.Reader(['en'])
             results = reader.readtext(np.array(img), rotation_info=[90, 270])
             
-            interpretations = []
+            peaks_found = []
             for (bbox, text, prob) in results:
-                clean = "".join(re.findall(r'[0-9.]+', text.replace("I", "1").replace("l", "1")))
+                # Clean text: keep only numbers and decimals
+                clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
+                
                 try:
                     val = float(clean)
-                    if 400 <= val <= 4000:
-                        for group, info in OFFICIAL_IR_DATABASE.items():
-                            if (info[0]-12) <= val <= (info[1]+12):
-                                interpretations.append({
-                                    "Peak Found": val,
-                                    "Official Interpretation": group,
-                                    "Range": f"{info[0]}-{info[1]}",
-                                    "Shape": info[2]
+                    # Filter: Range check and Scale check
+                    if 400 <= val <= 4000 and not is_scale(val):
+                        for group, r in IR_DB.items():
+                            # 10 cm-1 buffer for experimental shift
+                            if (r[0]-10) <= val <= (r[1]+10):
+                                peaks_found.append({
+                                    "Wavenumber (cm⁻¹)": val,
+                                    "Functional Group": group,
+                                    "Literature Range": f"{r[0]} - {r[1]}"
                                 })
-                except: continue
+                except:
+                    continue
 
-            if interpretations:
-                df = pd.DataFrame(interpretations).drop_duplicates(subset=["Peak Found"]).sort_values("Peak Found", ascending=False)
+            if peaks_found:
+                df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Wavenumber (cm⁻¹)"])
+                df = df.sort_values("Wavenumber (cm⁻¹)", ascending=False)
                 
-                st.subheader("✅ 1. Detected Peaks & Database Match")
-                st.dataframe(df, use_container_width=True)
+                st.subheader("✅ Detected Functional Groups")
+                st.table(df)
                 
-                # --- 3. STRUCTURAL PREDICTION LOGIC ---
-                st.subheader("🧪 2. Predicted Structure")
-                found = df["Official Interpretation"].tolist()
-                
-                pred_made = False
-                if "Aldehyde (C=O)" in found and "Aldehyde C-H (Fermi)" in found:
-                    st.success("🎯 **Structure: ALDEHYDE** (C=O + Fermi Doublet confirmed)")
-                    pred_made = True
-                elif "Carboxylic Acid (C=O)" in found and "Carboxylic Acid O-H" in found:
-                    st.success("🎯 **Structure: CARBOXYLIC ACID** (C=O + Broad O-H confirmed)")
-                    pred_made = True
-                elif "Ester (C=O)" in found and "C-O Stretch" in found:
-                    st.success("🎯 **Structure: ESTER** (C=O + C-O confirmed)")
-                    pred_made = True
-                
-                # Fingerprint Logic
-                if "Arom-Mono" in found:
-                    st.info("✅ **Aromatic Pattern: Monosubstituted Ring**")
-                elif "Arom-Para" in found:
-                    st.info("✅ **Aromatic Pattern: Para-disubstituted Ring**")
-
-                if not pred_made:
-                    st.info("Molecular fragments identified, but no specific structural match found.")
-
-                # --- 4. DOWNLOAD SECTION ---
-                st.divider()
-                csv = df.to_csv(index=False).encode('utf-8')
-                st.download_button("📥 Download Analysis Report", data=csv, file_name="IR_Report.csv")
+                # Structural Logic
+                groups = df["Functional Group"].tolist()
+                st.subheader("🎯 Structural Summary")
+                if "Aldehyde C=O" in groups and "Aldehyde C-H (Fermi Doublet)" in groups:
+                    st.success("The compound is likely an **Aldehyde**.")
+                elif "Carboxylic Acid C=O" in groups and "Carboxylic Acid O-H (Very Broad)" in groups:
+                    st.success("The compound is likely a **Carboxylic Acid**.")
+                elif "Ester C=O" in groups and "C-O Stretch (Ether/Ester/Alcohol)" in groups:
+                    st.success("The compound is likely an **Ester**.")
+                else:
+                    st.info("Multiple functional groups detected. Compare with NMR for full structure.")
             else:
-                st.error("No peaks detected. Ensure labels are clear.")
+                st.warning("No peaks detected. Ensure numerical labels are clearly visible on the graph.")
