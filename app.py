@@ -54,7 +54,7 @@ STRUCTURE_LOGIC = {
 }
 
 st.set_page_config(page_title="Structure-Verified IR", layout="wide")
-st.title("🔬 Structure-Verified IR Interpreter")
+st.title("🔬 IR Interpreter Engine")
 
 # --- 3. THE SELECTOR ---
 target_structure = st.selectbox("Select the expected Structure to verify:", list(STRUCTURE_LOGIC.keys()))
