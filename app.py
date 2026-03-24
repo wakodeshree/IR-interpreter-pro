@@ -43,9 +43,9 @@ OFFICIAL_IR_DATABASE = {
 }
 
 # --- 2. THE APP INTERFACE ---
-st.set_page_config(page_title="PhD IR Interpreter", layout="wide")
-st.title("🔬 Official IR Interpretation Engine")
-st.write("Upload a Shimadzu IR Graph for automated interpretation based on Table 2.3")
+st.set_page_config(page_title="IR Interpreter", layout="wide")
+st.title("🔬 IR Interpretation Engine")
+st.write("Upload a IR Graph for automated interpretation based on Table 2.3")
 
 uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
 
