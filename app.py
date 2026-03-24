@@ -7,17 +7,38 @@ import re
 
 # --- 1. THE COMPLETE IR DATABASE ---
 IR_DB = {
-    "Alcohol O-H": [3200, 3650],
-    "Carboxylic Acid O-H": [2400, 3400],
-    "Aldehyde C-H (Fermi)": [2720, 2850],
-    "Ester C=O": [1730, 1750],
-    "Aldehyde C=O": [1720, 1740],
-    "Ketone C=O": [1705, 1725],
-    "Carboxylic Acid C=O": [1700, 1725],
-    "Amide C=O": [1630, 1680],
-    "Nitro (-NO2)": [1350, 1550],
-    "C-O Stretch": [1000, 1300]
-}
+       # C-H Region
+    "Alkane C-H (stretch)": [2850, 3000, "Strong"],
+    "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
+    "Aromatic C-H (stretch)": [3010, 3050, "Medium"],
+    "Alkyne ≡C-H (stretch)": [3250, 3350, "Strong/Sharp"],
+    "Aldehyde (C-H stretch)": [2800, 2900, "Weak/2 peaks"],
+    
+    # Multiple Bonds
+    "Alkene (C=C)": [1600, 1680, "Medium"],
+    "Aromatic (C=C)": [1475, 1600, "Medium/Weak"],
+    "Alkyne (C≡C)": [2100, 2250, "Medium/Weak"],
+    "Nitrile (C≡N)": [2240, 2260, "Medium/Sharp"],
+
+    # Carbonyls (The 1700 Region)
+    "Aldehyde C=O": [1720, 1740, "Strong"],
+    "Ketone C=O": [1705, 1725, "Strong"],
+    "Carboxylic acid C=O": [1700, 1725, "Strong"],
+    "Ester C=O": [1730, 1750, "Strong"],
+    "Amide C=O": [1630, 1680, "Strong"],
+    "Anhydride/Acid Chloride": [1760, 1810, "Strong"],
+
+    # O-H / N-H Region
+    "Alcohol O-H (free)": [3600, 3650, "Sharp"],
+    "Alcohol O-H (H-bonded)": [3200, 3400, "Strong/Broad"],
+    "Carboxylic acid O-H": [2400, 3400, "Very Broad"],
+    "Amine/Amide N-H": [3100, 3500, "Medium"],
+    
+    # Fingerprint/Single Bonds
+    "Nitro (-NO2)": [1350, 1550, "Strong"],
+    "C-O (Alcohol/Ether/Ester)": [1000, 1300, "Strong"],
+    "C-F (Halide)": [1000, 1400, "Strong"],
+    "C-Cl (Halide)": [540, 785, "Strong"]
 
 # --- 2. STRUCTURE -> REQUIRED GROUPS MAPPING ---
 STRUCTURE_LOGIC = {
@@ -27,6 +48,9 @@ STRUCTURE_LOGIC = {
     "Ester": ["Ester C=O", "C-O Stretch"],
     "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
     "Ketone": ["Ketone C=O"]
+    "Amine/Amide N-H": ["Amine/Amide N-H"]
+    "Nitrile (C≡N)": ["Nitrile (C≡N)"]
+    "Alkyne (C≡C)": ["Alkyne (C≡C)"]       
 }
 
 st.set_page_config(page_title="Structure-Verified IR", layout="wide")
