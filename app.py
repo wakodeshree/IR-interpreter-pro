@@ -5,9 +5,9 @@ import easyocr
 from PIL import Image
 import re
 
-# --- 1. THE COMPLETE IR DATABASE ---
+# --- 1. THE COMPLETE IR DATABASE (WITH RANGES) ---
 IR_DB = {
-        # C-H Region
+    # C-H Region
     "Alkane C-H (stretch)": [2850, 3000, "Strong"],
     "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
     "Aromatic C-H (stretch)": [3010, 3050, "Medium"],
@@ -38,10 +38,10 @@ IR_DB = {
     "Nitro (-NO2)": [1350, 1550, "Strong"],
     "C-O (Alcohol/Ether/Ester)": [1000, 1300, "Strong"],
     "C-F (Halide)": [1000, 1400, "Strong"],
-    "C-Cl (Halide)": [540, 785, "Strong"]}
+    "C-Cl (Halide)": [540, 785, "Strong"]
+}
 
-# --- 2. STRUCTURE -> REQUIRED GROUPS MAPPING ---
-# Every line here MUST end with a comma EXCEPT the last one!
+# --- 2. STRUCTURE -> REQUIRED GROUPS ---
 STRUCTURE_LOGIC = {
     "All Peaks (No Filter)": [],
     "Aldehyde": ["Aldehyde C=O", "Aldehyde C-H (Fermi)"],
@@ -51,48 +51,61 @@ STRUCTURE_LOGIC = {
     "Ketone": ["Ketone C=O"]
 }
 
-st.set_page_config(page_title="Structure-Verified IR", layout="wide")
-st.title("🔬 Structure-Verified IR Interpreter")
+st.set_page_config(page_title="IR Interpreter", layout="wide")
+st.title("🔬IR Interpreter Engine")
 
-target_structure = st.selectbox("Select the expected Structure to verify:", list(STRUCTURE_LOGIC.keys()))
-
+target_structure = st.selectbox("Select Structure to Verify:", list(STRUCTURE_LOGIC.keys()))
 uploaded_file = st.file_uploader("Upload IR Image", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
     img = Image.open(uploaded_file)
     st.image(img, use_container_width=True)
     
-    if st.button("🚀 Verify Structure"):
-        reader = easyocr.Reader(['en'])
-        results = reader.readtext(np.array(img), rotation_info=[90, 270])
-        
-        peaks_found = []
-        # Filter scale markers
-        scale_ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500]
-        
-        for (bbox, text, prob) in results:
-            clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
-            try:
-                val = float(clean)
-                if int(val) in scale_ignore: continue
-                
-                if 400 <= val <= 4000:
-                    for group, r in IR_DB.items():
-                        if (r[0]-15) <= val <= (r[1]+15):
-                            peaks_found.append({"Wavenumber": val, "Group": group})
-            except: continue
-
-        if peaks_found:
-            full_df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Wavenumber"])
-            req_groups = STRUCTURE_LOGIC[target_structure]
+    if st.button("🚀 Run Analysis"):
+        with st.spinner("Extracting peaks..."):
+            reader = easyocr.Reader(['en'])
+            results = reader.readtext(np.array(img), rotation_info=[90, 270])
             
-            if target_structure == "All Peaks (No Filter)":
-                display_df = full_df
-            else:
-                display_df = full_df[full_df["Group"].isin(req_groups)]
+            peaks_found = []
+            scale_ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500]
+            
+            for (bbox, text, prob) in results:
+                clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
+                try:
+                    val = float(clean)
+                    if int(val) in scale_ignore: continue
+                    
+                    if 400 <= val <= 4000:
+                        for group, r in IR_DB.items():
+                            # 15 cm-1 buffer for experimental shift
+                            if (r[0]-15) <= val <= (r[1]+15):
+                                peaks_found.append({
+                                    "Experimental Peak": val, 
+                                    "Functional Group": group,
+                                    "Literature Range": f"{r[0]} - {r[1]}"  # Added Range back
+                                })
+                except: continue
 
-            st.subheader(f"✅ Peaks relevant to: {target_structure}")
-            if not display_df.empty:
-                st.table(display_df.sort_values("Wavenumber", ascending=False))
+            if peaks_found:
+                full_df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Experimental Peak"])
+                req_groups = STRUCTURE_LOGIC[target_structure]
+                
+                if target_structure == "All Peaks (No Filter)":
+                    display_df = full_df
+                else:
+                    display_df = full_df[full_df["Functional Group"].isin(req_groups)]
+
+                st.subheader(f"📊 Results for: {target_structure}")
+                if not display_df.empty:
+                    # Display table with the Range column
+                    st.table(display_df.sort_values("Experimental Peak", ascending=False))
+                    
+                    # Logic Check
+                    found_set = set(display_df["Functional Group"].tolist())
+                    missing = set(req_groups) - found_set
+                    if not missing and target_structure != "All Peaks (No Filter)":
+                        st.success(f"🎯 Structural Match! All expected peaks for {target_structure} were detected.")
+                else:
+                    st.error(f"No peaks matching the {target_structure} pattern were found.")
             else:
-                st.error(f"No peaks matching the {target_structure} pattern were detected.")
+                st.warning("No peaks detected. Ensure the numerical labels are clear.")
