@@ -5,91 +5,83 @@ import easyocr
 from PIL import Image
 import re
 
-# --- 1. THE COMPLETE IR DATABASE (Table 2.3) ---
+# --- 1. THE COMPLETE IR DATABASE ---
 IR_DB = {
-    "Alcohol O-H (Broad)": [3200, 3650],
-    "Carboxylic Acid O-H (Very Broad)": [2400, 3400],
-    "Amine/Amide N-H": [3100, 3500],
-    "Alkyne ≡C-H": [3250, 3350],
-    "Aromatic C-H": [3000, 3100],
-    "Alkene =C-H": [3010, 3100],
-    "Alkane C-H": [2850, 2970],
-    "Aldehyde C-H (Fermi Doublet)": [2720, 2850],
-    "Nitrile C≡N": [2240, 2260],
-    "Alkyne C≡C": [2100, 2250],
-    "Acid Chloride/Anhydride C=O": [1760, 1810],
+    "Alcohol O-H": [3200, 3650],
+    "Carboxylic Acid O-H": [2400, 3400],
+    "Aldehyde C-H (Fermi)": [2720, 2850],
     "Ester C=O": [1730, 1750],
     "Aldehyde C=O": [1720, 1740],
     "Ketone C=O": [1705, 1725],
     "Carboxylic Acid C=O": [1700, 1725],
     "Amide C=O": [1630, 1680],
-    "Alkene C=C": [1600, 1680],
-    "Aromatic C=C": [1475, 1600],
     "Nitro (-NO2)": [1350, 1550],
-    "C-O Stretch (Ether/Ester/Alcohol)": [1000, 1300],
-    "C-Cl (Halide)": [540, 785]
+    "C-O Stretch": [1000, 1300]
 }
 
-# --- 2. THE CLEANING ENGINE ---
-def is_scale(val):
-    """Ignores standard IR axis numbers"""
-    scale_markers = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
-    return int(val) in scale_markers if val % 1 == 0 else False
+# --- 2. STRUCTURE -> REQUIRED GROUPS MAPPING ---
+STRUCTURE_LOGIC = {
+    "All Peaks (No Filter)": [],
+    "Aldehyde": ["Aldehyde C=O", "Aldehyde C-H (Fermi)"],
+    "Carboxylic Acid": ["Carboxylic Acid C=O", "Carboxylic Acid O-H"],
+    "Ester": ["Ester C=O", "C-O Stretch"],
+    "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
+    "Ketone": ["Ketone C=O"]
+}
 
-# --- 3. APP INTERFACE ---
-st.set_page_config(page_title="Professional IR Interpreter", layout="wide")
-st.title("🔬 Professional IR Interpretation Engine")
-st.write("Upload your IR graph to detect peaks and match them against the official database.")
+st.set_page_config(page_title="Structure-Verified IR", layout="wide")
+st.title("🔬 Structure-Verified IR Interpreter")
 
-uploaded_file = st.file_uploader("Upload IR Image (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
+# --- 3. THE SELECTOR ---
+target_structure = st.selectbox("Select the expected Structure to verify:", list(STRUCTURE_LOGIC.keys()))
+
+uploaded_file = st.file_uploader("Upload IR Image", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
     img = Image.open(uploaded_file)
-    st.image(img, caption="Uploaded Spectrum", use_container_width=True)
+    st.image(img, use_container_width=True)
     
-    if st.button("🚀 Analyze Spectrum"):
-        with st.spinner("Scanning for peaks and matching data..."):
-            # Initialize OCR for vertical labels
-            reader = easyocr.Reader(['en'])
-            results = reader.readtext(np.array(img), rotation_info=[90, 270])
-            
-            peaks_found = []
-            for (bbox, text, prob) in results:
-                # Clean text: keep only numbers and decimals
-                clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
+    if st.button("🚀 Verify Structure"):
+        reader = easyocr.Reader(['en'])
+        results = reader.readtext(np.array(img), rotation_info=[90, 270])
+        
+        peaks_found = []
+        for (bbox, text, prob) in results:
+            clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
+            try:
+                val = float(clean)
+                # Ignore Scale (4000, 500 etc)
+                if val in [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500]: continue
                 
-                try:
-                    val = float(clean)
-                    # Filter: Range check and Scale check
-                    if 400 <= val <= 4000 and not is_scale(val):
-                        for group, r in IR_DB.items():
-                            # 10 cm-1 buffer for experimental shift
-                            if (r[0]-10) <= val <= (r[1]+10):
-                                peaks_found.append({
-                                    "Wavenumber (cm⁻¹)": val,
-                                    "Functional Group": group,
-                                    "Literature Range": f"{r[0]} - {r[1]}"
-                                })
-                except:
-                    continue
+                if 400 <= val <= 4000:
+                    for group, r in IR_DB.items():
+                        if (r[0]-15) <= val <= (r[1]+15):
+                            peaks_found.append({"Wavenumber": val, "Group": group})
+            except: continue
 
-            if peaks_found:
-                df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Wavenumber (cm⁻¹)"])
-                df = df.sort_values("Wavenumber (cm⁻¹)", ascending=False)
-                
-                st.subheader("✅ Detected Functional Groups")
-                st.table(df)
-                
-                # Structural Logic
-                groups = df["Functional Group"].tolist()
-                st.subheader("🎯 Structural Summary")
-                if "Aldehyde C=O" in groups and "Aldehyde C-H (Fermi Doublet)" in groups:
-                    st.success("The compound is likely an **Aldehyde**.")
-                elif "Carboxylic Acid C=O" in groups and "Carboxylic Acid O-H (Very Broad)" in groups:
-                    st.success("The compound is likely a **Carboxylic Acid**.")
-                elif "Ester C=O" in groups and "C-O Stretch (Ether/Ester/Alcohol)" in groups:
-                    st.success("The compound is likely an **Ester**.")
-                else:
-                    st.info("Multiple functional groups detected. Compare with NMR for full structure.")
+        if peaks_found:
+            full_df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Wavenumber"])
+            
+            # --- THE FILTERING LOGIC ---
+            required_groups = STRUCTURE_LOGIC[target_structure]
+            
+            if target_structure == "All Peaks (No Filter)":
+                display_df = full_df
             else:
-                st.warning("No peaks detected. Ensure numerical labels are clearly visible on the graph.")
+                # Filter to only show groups that belong to the selected structure
+                display_df = full_df[full_df["Group"].isin(required_groups)]
+
+            st.subheader(f"✅ Peaks relevant to: {target_structure}")
+            if not display_df.empty:
+                st.table(display_df.sort_values("Wavenumber", ascending=False))
+                
+                # Check if all required groups were found
+                found_set = set(display_df["Group"].tolist())
+                missing = set(required_groups) - found_set
+                
+                if not missing:
+                    st.success(f"🎯 Structural Match! All expected peaks for {target_structure} were detected.")
+                else:
+                    st.warning(f"⚠️ Missing peaks for: {', '.join(missing)}. Structure might be different.")
+            else:
+                st.error(f"No peaks matching the {target_structure} pattern were found.")
