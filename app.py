@@ -29,15 +29,6 @@ OFFICIAL_IR_DATABASE = {
     "Arom-Mono": [690, 770, "Strong (700/750)"],
     "Arom-Para": [800, 860, "Strong (825)"]
 }
-# --- SCALE FILTER LOGIC ---
-def is_scale_number(val, mode):
-    """Checks if a number is likely a graph scale marker"""
-    # 1. Scale markers are usually whole integers
-    if not (val % 1 == 0): return False   
-    val_int = int(val)
-    if mode == "IR":
-        # IR scale markers are usually multiples of 500 or 1000
-        return val_int in [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
 # --- 2. INTERFACE ---
 st.set_page_config(page_title="PhD IR Dashboard", layout="wide")
 st.title("🔬 Advanced IR Interpretation Engine")
