@@ -38,7 +38,7 @@ IR_DB = {
     "Nitro (-NO2)": [1350, 1550, "Strong"],
     "C-O (Alcohol/Ether/Ester)": [1000, 1300, "Strong"],
     "C-F (Halide)": [1000, 1400, "Strong"],
-    "C-Cl (Halide)": [540, 785, "Strong"]
+    "C-Cl (Halide)": [540, 785, "Strong"]}
 
 # --- 2. STRUCTURE -> REQUIRED GROUPS MAPPING ---
 STRUCTURE_LOGIC = {
