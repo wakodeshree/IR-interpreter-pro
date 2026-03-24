@@ -6,7 +6,7 @@ from PIL import Image, ImageOps, ImageEnhance
 import io, re
 
 # --- CONFIG ---
-st.set_page_config(page_title="IR Structure Predictor Pro", layout="wide")
+st.set_page_config(page_title="IR Structure Predictor Pro", layout="narrow")
 st.title("🔬 IR Structure Predictor Pro")
 st.markdown("Automated Peak Detection & Advanced Substitution Analysis")
 
@@ -46,7 +46,7 @@ ir_db = {
     "C-Cl (Halide)": [540, 785, "Strong"]
 }
 
-uploaded_file = st.file_uploader("Upload Shimadzu Graph", type=['png', 'jpg', 'jpeg'])
+uploaded_file = st.file_uploader("Upload IR Graph", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
     raw_img = Image.open(uploaded_file)
@@ -57,7 +57,7 @@ if uploaded_file:
     enhancer = ImageEnhance.Sharpness(proc_img)
     proc_img = enhancer.enhance(2.0)
 
-    if st.button("🚀 Run Analysis"):
+    if st.button("🚀 Run Analysis Get Ready For Magic"):
         with st.spinner("Extracting Precise Data..."):
             reader = easyocr.Reader(['en'])
             results = reader.readtext(np.array(proc_img), rotation_info=[90, 270])
