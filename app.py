@@ -7,25 +7,48 @@ import io, re
 
 # --- 1. OFFICIAL DATABASE (Table 2.3) ---
 OFFICIAL_IR_DATABASE = {
-    "Alkane C-H": [2850, 3000, "Strong"],
-    "Alkene =C-H": [3000, 3100, "Medium"],
-    "Aromatic C-H": [3010, 3050, "Medium"],
-    "Alkyne C-H": [3250, 3350, "Strong/Sharp"],
-    "Aldehyde C-H": [2720, 2850, "Weak/2 peaks (Fermi)"],
-    "Alkene C=C": [1600, 1680, "Medium"],
-    "Aromatic C=C": [1475, 1600, "Medium/Weak"],
-    "Nitrile C≡N": [2240, 2260, "Medium/Sharp"],
-    "Aldehyde C=O": [1720, 1740, "Strong"],
-    "Ketone C=O": [1705, 1725, "Strong"],
-    "Carboxylic Acid C=O": [1700, 1725, "Strong"],
-    "Ester C=O": [1730, 1750, "Strong"],
-    "Amide C=O": [1630, 1680, "Strong"],
-    "Alcohol O-H": [3200, 3650, "Strong/Broad"],
-    "Carboxylic Acid O-H": [2400, 3400, "Very Broad"],
-    "Nitro (-NO2)": [1350, 1550, "Strong (Doublet)"],
-    "C-O Stretch": [1000, 1300, "Strong"],
-    "Arom-Mono": [680, 770, "Strong (2 peaks near 700/750)"],
-    "Arom-Para": [800, 860, "Strong (1 peak near 825)"]
+    # --- C-H STRETCHING REGION ---
+    "Alkane C-H (sp3)": [2850, 2970, "Strong"],
+    "Alkene C-H (sp2)": [3010, 3100, "Medium"],
+    "Aromatic C-H (sp2)": [3000, 3100, "Medium"],
+    "Alkyne C-H (sp)": [3260, 3330, "Strong, Sharp"],
+    "Aldehyde C-H (Fermi)": [2700, 2850, "Weak, 2 bands (2720/2820)"],
+
+    # --- TRIPLE BOND REGION ---
+    "Nitrile (C≡N)": [2210, 2260, "Medium, Sharp"],
+    "Alkyne (C≡C)": [2100, 2260, "Weak/Medium"],
+
+    # --- CARBONYL REGION (C=O) ---
+    "Acid Anhydride (C=O)": [1740, 1820, "Two peaks (Strong)"],
+    "Acid Chloride (C=O)": [1785, 1815, "Strong"],
+    "Ester (C=O)": [1735, 1750, "Strong"],
+    "Aldehyde (C=O)": [1720, 1740, "Strong"],
+    "Ketone (C=O)": [1705, 1725, "Strong"],
+    "Carboxylic Acid (C=O)": [1700, 1720, "Strong"],
+    "Amide (C=O)": [1630, 1690, "Strong (Amide I)"],
+
+    # --- DOUBLE BOND REGION ---
+    "Alkene (C=C)": [1600, 1680, "Medium/Weak"],
+    "Aromatic (C=C)": [1450, 1600, "Medium (Ring vibrations)"],
+    "Nitro (-NO2)": [1330, 1550, "Strong (2 peaks: Sym/Asym)"],
+
+    # --- O-H / N-H REGION ---
+    "Alcohol/Phenol O-H": [3200, 3650, "Strong, Broad"],
+    "Carboxylic Acid O-H": [2500, 3300, "Very Broad, Munged with C-H"],
+    "Amine/Amide N-H": [3300, 3500, "Medium (Singlet for 2°, Doublet for 1°)"],
+
+    # --- FINGERPRINT / HALIDES ---
+    "C-O Stretch": [1000, 1300, "Strong (Ether/Ester/Alcohol)"],
+    "C-F Stretch": [1000, 1400, "Strong"],
+    "C-Cl Stretch": [600, 800, "Medium"],
+    "C-Br Stretch": [500, 600, "Medium"],
+    "Sulfone (S=O)": [1300, 1350, "Strong"],
+
+    # --- AROMATIC SUBSTITUTION (OOP Bending) ---
+    "Arom-Mono": [690, 710, "Strong (Must have 750 match)"],
+    "Arom-Ortho": [735, 770, "Strong"],
+    "Arom-Meta": [750, 810, "Strong"],
+    "Arom-Para": [800, 860, "Strong"]
 }
 
 st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
@@ -97,6 +120,20 @@ if uploaded_file:
                     st.info("✅ **Pattern: Para-disubstituted Benzene**")
                 else:
                     st.write("No clear substitution pattern detected in 600-900 cm⁻¹.")
+                    # --- ADD THIS TO YOUR STRUCTURAL LOGIC SECTION ---
+# Nitro Compound Logic
+if "Nitro (-NO2)" in groups:
+    st.info("✅ **Structure Identified: Nitro Compound** (Look for two strong peaks near 1530 and 1350)")
+
+# Amide Logic (C=O + N-H)
+if "Amide (C=O)" in groups and "Amine/Amide N-H" in groups:
+    st.success("🎯 **Predicted Structure: Amide** (Combined Carbonyl and N-H signals)")
+
+# Alkyne Logic (Check for terminal vs internal)
+if "Alkyne C-H (sp)" in groups:
+    st.success("🎯 **Predicted Structure: Terminal Alkyne** (≡C-H detected at ~3300)")
+elif "Alkyne (C≡C)" in groups:
+    st.info("🎯 **Predicted Structure: Internal Alkyne** (C≡C detected without 3300 peak)")
                 
                 # Download results
                 csv = df.to_csv(index=False).encode('utf-8')
