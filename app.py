@@ -1,115 +1,118 @@
 import streamlit as st
 import pandas as pd
-import easyocr
 import numpy as np
+import easyocr
 from PIL import Image, ImageOps, ImageEnhance
-import io, re
+import re
 
-# --- 1. SETTINGS & DATABASE ---
+# --- 1. SETTINGS ---
 st.set_page_config(page_title="PhD Multi-Spec Dashboard", layout="wide")
-st.title("🔬 Integrated IR & H-NMR Interpreter")
+st.title("🔬 Integrated IR, H-NMR & C-NMR Interpretation Suite")
+st.markdown("Automated Peak Detection (IR) + Manual Correlation (NMR) based on Table 2.3")
 
-OFFICIAL_IR_DATABASE = {
-    # C-H Region
-    "Alkane C-H (stretch)": [2850, 3000, "Strong"],
-    "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
-    "Aromatic C-H (stretch)": [3010, 3050, "Medium"],
-    "Alkyne ≡C-H (stretch)": [3250, 3350, "Strong/Sharp"],
-    "Aldehyde (C-H stretch)": [2800, 2900, "Weak/2 peaks"],
-    
-    # Multiple Bonds
-    "Alkene (C=C)": [1600, 1680, "Medium"],
-    "Aromatic (C=C)": [1475, 1600, "Medium/Weak"],
-    "Alkyne (C≡C)": [2100, 2250, "Medium/Weak"],
-    "Nitrile (C≡N)": [2240, 2260, "Medium/Sharp"],
+# --- 2. MASTER DATABASES (FROM YOUR CHARTS) ---
 
-    # Carbonyls (The 1700 Region)
-    "Aldehyde C=O": [1720, 1740, "Strong"],
-    "Ketone C=O": [1705, 1725, "Strong"],
-    "Carboxylic acid C=O": [1700, 1725, "Strong"],
-    "Ester C=O": [1730, 1750, "Strong"],
-    "Amide C=O": [1630, 1680, "Strong"],
-    "Anhydride/Acid Chloride": [1760, 1810, "Strong"],
-
-    # O-H / N-H Region
-    "Alcohol O-H (free)": [3600, 3650, "Sharp"],
-    "Alcohol O-H (H-bonded)": [3200, 3400, "Strong/Broad"],
-    "Carboxylic acid O-H": [2400, 3400, "Very Broad"],
-    "Amine/Amide N-H": [3100, 3500, "Medium"],
-    
-    # Fingerprint/Single Bonds
-    "Nitro (-NO2)": [1350, 1550, "Strong"],
-    "C-O (Alcohol/Ether/Ester)": [1000, 1300, "Strong"],
-    "C-F (Halide)": [1000, 1400, "Strong"],
-    "C-Cl (Halide)": [540, 785, "Strong"]
+IR_DB = {
+    "Alkane C-H": [2850, 2970], "Alkene =C-H": [3010, 3100],
+    "Aromatic C-H": [3000, 3100], "Alkyne ≡C-H": [3260, 3330],
+    "Aldehyde C-H (Fermi)": [2700, 2850], "Alcohol/Phenol O-H": [3200, 3650],
+    "Carboxylic Acid O-H": [2500, 3300], "Nitrile (C≡N)": [2210, 2260],
+    "Ester (C=O)": [1735, 1750], "Aldehyde (C=O)": [1720, 1740],
+    "Ketone (C=O)": [1705, 1725], "Carboxylic Acid (C=O)": [1700, 1720],
+    "Amide (C=O)": [1630, 1690], "Nitro (-NO2)": [1330, 1550]
 }
 
-# --- 2. CREATE THE TABS ---
-tab1, tab2 = st.tabs(["📡 Infrared (IR)", "🧬 H-NMR Analysis"])
+H_NMR_DB = {
+    "R-CH3 (Methyl)": [0.8, 1.0], "R-CH2-R (Methylene)": [1.2, 1.4],
+    "R-CH-R (Methine)": [1.4, 1.7], "C=C-CH (Allylic)": [1.6, 2.6],
+    "R-C≡CH (Alkyne)": [2.0, 3.0], "RO2C-CH (Ester alpha)": [2.0, 2.2],
+    "O=C-CH (Ketone alpha)": [2.0, 2.7], "ROH (Alcohol)": [2.0, 4.0],
+    "ArOH (Phenol)": [4.0, 8.0], "Ar-CH (Benzylic)": [2.2, 3.0],
+    "Halide-CH (I/Br/Cl)": [2.0, 4.0], "HO-CH (Alcohol alpha)": [3.4, 4.0],
+    "RO-CH (Ether alpha)": [3.3, 4.0], "F-CH (Fluoride)": [4.0, 4.5],
+    "R-C=CH (Vinyl)": [4.6, 5.9], "Aromatic (Ar-H)": [6.0, 8.5],
+    "Aldehyde (O=C-H)": [9.0, 10.0], "Carboxylic Acid (RCO2H)": [10.0, 13.0]
+}
+
+C_NMR_DB = {
+    "Primary Alkyl (R-CH3)": [8, 35], "Secondary Alkyl (R2CH2)": [15, 50],
+    "Tertiary Alkyl (R3CH)": [20, 60], "Alkyne (C≡C)": [65, 85],
+    "Alkene (C=C)": [100, 150], "Aromatic Ring (C)": [110, 170],
+    "C-Halogen (I/Br/Cl)": [0, 80], "C-O (Alcohol/Ether)": [50, 80],
+    "Amide/Ester (C=O)": [165, 175], "Carboxylic Acid (C=O)": [175, 185],
+    "Aldehyde (C=O)": [190, 200], "Ketone (C=O)": [205, 220]
+}
+
+# --- 3. TABBED INTERFACE ---
+tab1, tab2, tab3 = st.tabs(["📡 Infrared (IR)", "🧬 H-NMR", "💎 13C-NMR"])
 
 # --- TAB 1: IR ANALYSIS ---
 with tab1:
-    st.header("IR Spectrum Analysis")
-    uploaded_file = st.file_uploader("Upload IR Graph", type=['png', 'jpg', 'jpeg'])
-
-    if uploaded_file:
-        img = Image.open(uploaded_file)
+    st.header("IR Spectrum Image Analysis")
+    f1 = st.file_uploader("Upload IR Graph", type=['png', 'jpg', 'jpeg'], key="ir")
+    if f1:
+        img = Image.open(f1)
         st.image(img, use_container_width=True)
-        
-        if st.button("🚀 Analyze IR"):
-            reader = easyocr.Reader(['en'])
-            results = reader.readtext(np.array(img), rotation_info=[90, 270])
-            
-            interpretations = []
-            for (bbox, text, prob) in results:
-                clean = "".join(re.findall(r'[0-9.]+', text.replace("I", "1").replace("l", "1")))
-                try:
-                    val = float(clean)
-                    if 400 <= val <= 4000:
-                        for group, info in OFFICIAL_IR_DATABASE.items():
-                            if (info[0]-12) <= val <= (info[1]+12):
-                                interpretations.append({"Peak": val, "Group": group, "Shape": info[2]})
-                except: continue
+        if st.button("🚀 Extract IR Data"):
+            with st.spinner("Running OCR..."):
+                reader = easyocr.Reader(['en'])
+                res = reader.readtext(np.array(img), rotation_info=[90, 270])
+                ir_peaks = []
+                for x in res:
+                    clean = "".join(re.findall(r'[0-9.]+', x[1].replace("I","1")))
+                    try:
+                        v = float(clean)
+                        if 400 <= v <= 4000:
+                            for grp, r in IR_DB.items():
+                                if (r[0]-15) <= v <= (r[1]+15):
+                                    ir_peaks.append({"Peak": v, "Group": grp})
+                    except: continue
+                if ir_peaks:
+                    st.table(pd.DataFrame(ir_peaks).drop_duplicates(subset=["Peak"]))
+                else: st.error("No peaks detected.")
 
-            if interpretations:
-                df = pd.DataFrame(interpretations).drop_duplicates(subset=["Peak"])
-                st.subheader("✅ IR Results")
-                st.table(df)
-            else:
-                st.error("No IR peaks detected.")
-
-# --- TAB 2: NMR ANALYSIS ---
+# --- TAB 2: H-NMR ANALYSIS ---
 with tab2:
-    st.header("Proton NMR Interpretation")
-    st.write("Enter the chemical shifts (δ) from your NMR spectrum.")
+    st.header("H-NMR Correlation (Chart 2)")
+    h_in = st.text_input("Enter H-NMR shifts (δ) e.g., 1.3, 7.5, 9.8", key="hin")
+    hz_in = st.number_input("Enter Coupling Constant (J in Hz) if applicable", 0.0, 20.0, 0.0)
     
-    # Text input for the numbers
-    nmr_input = st.text_input("Enter shifts separated by commas (e.g. 9.8, 7.2, 1.2)", "")
-    
-    if nmr_input:
-        try:
-            # Convert text to list of numbers
-            shifts = [float(x.strip()) for x in nmr_input.split(",") if x.strip()]
-            
-            nmr_data = []
-            for s in shifts:
-                label = "Aliphatic/Alkyl"
-                if 9.0 <= s <= 10.2: label = "Aldehyde (CHO)"
-                elif 10.5 <= s <= 13.0: label = "Carboxylic Acid (OH)"
-                elif 6.5 <= s <= 8.5: label = "Aromatic Protons"
-                elif 3.3 <= s <= 4.5: label = "Protons near O/N/Halogen"
-                
-                nmr_data.append({"Shift (δ)": s, "Proton Type": label})
-            
-            st.subheader("✅ NMR Results")
-            st.table(pd.DataFrame(nmr_data))
-            
-            # --- COMBINED LOGIC ---
-            st.divider()
-            if any(9.0 <= s <= 10.2 for s in shifts):
-                st.success("🎯 **Conclusion**: NMR confirms an **Aldehyde** group.")
-            if any(6.5 <= s <= 8.5 for s in shifts):
-                st.info("🎯 **Conclusion**: NMR confirms an **Aromatic Ring**.")
+    if h_in:
+        h_shifts = [float(x.strip()) for x in h_in.split(",") if x.strip()]
+        h_results = []
+        for s in h_shifts:
+            match = "Unknown"
+            for label, r in H_NMR_DB.items():
+                if r[0] <= s <= r[1]: match = label
+            h_results.append({"Shift (δ)": s, "Interpretation": match})
+        st.table(pd.DataFrame(h_results))
         
-        except ValueError:
-            st.error("Please enter only numbers and commas.")
+        if hz_in > 0:
+            if 12 <= hz_in <= 18: st.info(f"✅ J={hz_in} Hz suggests **Trans-Alkene** geometry.")
+            elif 6 <= hz_in <= 12: st.info(f"✅ J={hz_in} Hz suggests **Cis-Alkene** geometry.")
+
+# --- TAB 3: 13C-NMR ANALYSIS ---
+with tab3:
+    st.header("13C-NMR Correlation (Chart 1)")
+    c_in = st.text_input("Enter C-NMR shifts (δ) e.g., 25.1, 128.4, 195.0", key="cin")
+    if c_in:
+        c_shifts = [float(x.strip()) for x in c_in.split(",") if x.strip()]
+        c_results = []
+        for s in c_shifts:
+            match = "Other"
+            for label, r in C_NMR_DB.items():
+                if r[0] <= s <= r[1]: match = label
+            c_results.append({"Shift (δ)": s, "Carbon Type": match})
+        st.table(pd.DataFrame(c_results))
+
+# --- 4. GLOBAL CONCLUSION ---
+if h_in and c_in:
+    st.divider()
+    st.subheader("🏁 Multi-Spectral Structural Conclusion")
+    h_val = [float(x.strip()) for x in h_in.split(",") if x.strip()]
+    c_val = [float(x.strip()) for x in c_in.split(",") if x.strip()]
+    
+    if any(9<=s<=10 for s in h_val) and any(190<=s<=200 for s in c_val):
+        st.success("🎯 **Conclusion: ALDEHYDE confirmed by H-NMR and C-NMR.**")
+    elif any(10<=s<=13 for s in h_val) and any(175<=s<=185 for s in c_val):
+        st.success("🎯 **Conclusion: CARBOXYLIC ACID confirmed by H-NMR and C-NMR.**")
