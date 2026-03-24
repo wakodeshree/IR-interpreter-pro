@@ -41,7 +41,7 @@ def is_scale_number(val, mode):
 # --- 2. INTERFACE ---
 st.set_page_config(page_title="PhD IR Dashboard", layout="wide")
 st.title("🔬 Advanced IR Interpretation Engine")
-st.write("Full-spectrum analysis)
+st.write("Full spectrum analysis)
 
 uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
 
