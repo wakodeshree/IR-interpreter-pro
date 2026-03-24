@@ -7,8 +7,8 @@ import io, re
 
 # --- 1. OFFICIAL DATABASE (Table 2.3) ---
 # Format: "Group Name": [Min_Range, Max_Range, "Description/Shape"]
-   Official Database= {
-    # C-H Region
+OFFICIAL_IR_DATABASE = {
+       # C-H Region
     "Alkane C-H (stretch)": [2850, 3000, "Strong"],
     "Alkene =C-H (stretch)": [3000, 3100, "Medium"],
     "Aromatic C-H (stretch)": [3010, 3050, "Medium"],
@@ -44,8 +44,8 @@ import io, re
 
 # --- 2. THE APP INTERFACE ---
 st.set_page_config(page_title="PhD IR Interpreter", layout="wide")
-st.title("🔬 IR Interpretation Engine")
-st.write("Upload a IR Graph for automated interpretation based on Table 2.3")
+st.title("🔬 Official IR Interpretation Engine")
+st.write("Upload a Shimadzu IR Graph for automated interpretation based on Table 2.3")
 
 uploaded_file = st.file_uploader("Upload Image", type=['png', 'jpg', 'jpeg'])
 
