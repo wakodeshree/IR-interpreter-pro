@@ -33,8 +33,7 @@ OFFICIAL_IR_DATABASE = {
 def is_scale_number(val, mode):
     """Checks if a number is likely a graph scale marker"""
     # 1. Scale markers are usually whole integers
-    if not (val % 1 == 0): return False 
-    
+    if not (val % 1 == 0): return False   
     val_int = int(val)
     if mode == "IR":
         # IR scale markers are usually multiples of 500 or 1000
