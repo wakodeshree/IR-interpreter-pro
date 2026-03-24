@@ -65,7 +65,7 @@ if uploaded_file:
     img = Image.open(uploaded_file)
     st.image(img, use_container_width=True)
     
-    if st.button("🚀 Verify Structure"):
+    if st.button("🚀 Analyze Graph"):
         reader = easyocr.Reader(['en'])
         results = reader.readtext(np.array(img), rotation_info=[90, 270])
         
