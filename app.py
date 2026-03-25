@@ -4,133 +4,106 @@ import numpy as np
 import easyocr
 from PIL import Image
 import re
-import io
 
-# --- 1. THE COMPLETE IR DATABASE ---
+# --- 1. ENHANCED DATABASE ---
 IR_DB = {
-    "Alcohol O-H": [3200, 3650],
-    "Carboxylic Acid O-H": [2400, 3400],
-    "Amine/Amide N-H": [3100, 3500],
-    "Alkyne ≡C-H": [3250, 3350],
-    "Aromatic/Alkene C-H": [3000, 3100],
-    "Alkane C-H": [2850, 2970],
-    "Aldehyde C-H (Fermi)": [2720, 2850],
-    "Nitrile C≡N": [2240, 2260],
-    "Alkyne C≡C": [2100, 2250],
-    "Acid Chloride/Anhydride C=O": [1760, 1810],
-    "Ester C=O": [1730, 1750],
-    "Aldehyde C=O": [1720, 1740],
-    "Ketone C=O": [1705, 1725],
-    "Carboxylic Acid C=O": [1700, 1725],
-    "Amide C=O": [1630, 1680],
-    "Alkene C=C": [1600, 1680],
-    "Aromatic C=C": [1475, 1600],
-    "Nitro (-NO2)": [1350, 1550],
-    "C-O Stretch": [1000, 1300],
-    "C-Cl (Halide)": [540, 785]
+    "Alcohol O-H": [3200, 3650], "Carboxylic Acid O-H": [2400, 3400],
+    "Aldehyde C-H (Fermi)": [2720, 2850], "Ester C=O": [1730, 1750],
+    "Aldehyde C=O": [1720, 1740], "Ketone C=O": [1705, 1725],
+    "Carboxylic Acid C=O": [1700, 1725], "Amide C=O": [1630, 1680],
+    "Nitro (-NO2)": [1350, 1550], "C-O Stretch": [1000, 1300],
+    "Aromatic C=C": [1475, 1600], "Alkane C-H": [2850, 2970]
 }
 
-# --- 2. STRUCTURE -> REQUIRED GROUPS ---
 STRUCTURE_LOGIC = {
     "All Peaks (No Filter)": [],
     "Aldehyde": ["Aldehyde C=O", "Aldehyde C-H (Fermi)"],
     "Carboxylic Acid": ["Carboxylic Acid C=O", "Carboxylic Acid O-H"],
     "Ester": ["Ester C=O", "C-O Stretch"],
     "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
-    "Ketone": ["Ketone C=O"],
-    "Nitro Compound": ["Nitro (-NO2)"],
-    "Amide": ["Amide C=O", "Amine/Amide N-H"]
+    "Ketone": ["Ketone C=O"]
 }
 
-# --- 3. PAGE CONFIG & UI ---
-st.set_page_config(page_title="PhD IR Pro Interpreter", layout="wide")
-st.title("🔬 Optimized PhD IR Interpretation Engine")
+# --- 2. ADVANCED SMART FILTER ---
+def smart_spectrum_validation(ocr_results):
+    """Detects if the graph is NMR based on keywords and scale ranges"""
+    detected_text = " ".join([x[1].lower() for x in ocr_results])
+    
+    # Check for NMR keywords
+    if any(word in detected_text for word in ["ppm", "nmr", "shift", "h-nmr", "c-nmr"]):
+        return False, "⚠️ NMR Graph Detected: This app is in IR Mode. Please upload an IR spectrum (cm⁻¹)."
+
+    # Extract all numbers to check the scale
+    nums = []
+    for x in ocr_results:
+        clean = "".join(re.findall(r'[0-9.]+', x[1]))
+        if clean:
+            try: nums.append(float(clean))
+            except: continue
+    
+    # If the highest number found is very low (e.g., < 250), it's definitely NMR/Carbon
+    if nums and max(nums) < 250:
+        return False, "⚠️ Scale Error: Peak values are too low for IR. This appears to be an NMR graph."
+    
+    return True, "Success"
+
+# --- 3. APP INTERFACE ---
+st.set_page_config(page_title="PhD IR Smart-Interpreter", layout="wide")
+st.title("🔬 Smart-Guard IR Interpreter")
 st.markdown("---")
 
 with st.sidebar:
-    st.header("📝 Sample Details")
-    sample_id = st.text_input("Sample ID / Name:", "Sample_001")
-    target_structure = st.selectbox("Select Structure to Verify:", list(STRUCTURE_LOGIC.keys()))
-    
+    st.header("📋 Sample Metadata")
+    sample_id = st.text_input("Sample ID", "Sample_Ref_01")
+    target_structure = st.selectbox("Verify Structure:", list(STRUCTURE_LOGIC.keys()))
     st.divider()
-    st.header("📲 Mobile App Instructions")
-    st.info("To use this as a FREE app: Open in Chrome/Safari on your phone and select **'Add to Home Screen'**.")
-    
-    st.divider()
-    st.subheader("🔗 Share Research")
-    qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://ir-interpreter-pro.streamlit.app"
-    st.image(qr_url, caption="Scan to open on mobile")
+    st.info("Machine Visualization Active: Detecting Graph Type...")
 
-# --- 4. PROCESSING LOGIC ---
-uploaded_file = st.file_uploader("Upload IR Graph (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
+up = st.file_uploader("Upload IR Spectrum", type=['png', 'jpg', 'jpeg'])
 
-if uploaded_file:
-    img = Image.open(uploaded_file)
+if up:
+    img = Image.open(up)
     st.image(img, use_container_width=True)
     
     if st.button("🚀 Run Full Analysis"):
-        with st.spinner("Validating spectrum and extracting peaks..."):
+        with st.spinner("Machine Scanning..."):
             reader = easyocr.Reader(['en'])
-            # rotation_info handles vertical Shimadzu labels
-            results = reader.readtext(np.array(img), rotation_info=[90, 270])
+            # We scan the image
+            ocr_res = reader.readtext(np.array(img), rotation_info=[90, 270])
             
-            raw_numbers = []
-            for (bbox, text, prob) in results:
-                clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
-                if clean:
-                    try: raw_numbers.append(float(clean))
+            # --- STEP 1: SMART VALIDATION ---
+            is_valid, message = smart_spectrum_validation(ocr_res)
+            
+            if not is_valid:
+                st.error(message)
+            else:
+                # --- STEP 2: PROCESS IR DATA ---
+                peaks = []
+                ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 0]
+                
+                for (bbox, text, prob) in ocr_res:
+                    clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
+                    try:
+                        v = float(clean)
+                        if int(v) in ignore: continue
+                        if 400 <= v <= 4000:
+                            for grp, r in IR_DB.items():
+                                if r[0]-15 <= v <= r[1]+15:
+                                    peaks.append({"Sample": sample_id, "Peak": v, "Group": grp, "Range": f"{r[0]}-{r[1]}"})
                     except: continue
 
-            # --- SMART VALIDATION ---
-            if raw_numbers and max(raw_numbers) < 100:
-                st.error("❌ **Wrong Graph Detected!** The values found (< 100) suggest an NMR or UV graph. Please upload an IR spectrum (400-4000 cm⁻¹).")
-            else:
-                peaks_found = []
-                scale_ignore = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
-                
-                for val in raw_numbers:
-                    if int(val) in scale_ignore: continue
-                    if 400 <= val <= 4000:
-                        for group, r in IR_DB.items():
-                            # 15 cm-1 buffer for experimental shift
-                            if (r[0]-15) <= val <= (r[1]+15):
-                                peaks_found.append({
-                                    "Sample ID": sample_id,
-                                    "Experimental Peak": val, 
-                                    "Functional Group": group,
-                                    "Literature Range": f"{r[0]} - {r[1]}"
-                                })
-
-                if peaks_found:
-                    full_df = pd.DataFrame(peaks_found).drop_duplicates(subset=["Experimental Peak"])
-                    req_groups = STRUCTURE_LOGIC[target_structure]
+                if peaks:
+                    df = pd.DataFrame(peaks).drop_duplicates(subset=["Peak"])
                     
-                    if target_structure == "All Peaks (No Filter)":
-                        display_df = full_df
-                    else:
-                        display_df = full_df[full_df["Functional Group"].isin(req_groups)]
-
-                    st.subheader(f"✅ Results for: {target_structure}")
+                    # Apply Structural Filter
+                    req = STRUCTURE_LOGIC[target_structure]
+                    if target_structure != "All Peaks (No Filter)":
+                        df = df[df["Group"].isin(req)]
                     
-                    if not display_df.empty:
-                        final_df = display_df.sort_values("Experimental Peak", ascending=False)
-                        st.table(final_df)
-                        
-                        # --- DOWNLOAD REPORT ---
-                        csv = final_df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            label="📥 Download Research CSV",
-                            data=csv,
-                            file_name=f"{sample_id}_IR_Analysis.csv",
-                            mime="text/csv",
-                        )
-                        
-                        # Structural Match Success Logic
-                        found_set = set(display_df["Functional Group"].tolist())
-                        missing = set(req_groups) - found_set
-                        if not missing and target_structure != "All Peaks (No Filter)":
-                            st.success(f"🎯 Structural Match! All expected peaks for {target_structure} were confirmed.")
-                    else:
-                        st.error(f"No peaks matching the {target_structure} pattern were detected.")
+                    st.subheader(f"✅ Analysis for {sample_id}")
+                    st.dataframe(df.style.highlight_max(axis=0, subset=['Peak'], color='#3d5a80'))
+                    
+                    # CSV Download
+                    st.download_button("📥 Export CSV", df.to_csv(index=False), f"{sample_id}_IR.csv")
                 else:
-                    st.warning("No peaks detected. Ensure numerical labels are clearly visible on the spectrum.")
+                    st.warning("No IR peaks detected. Ensure wavenumber labels are clear.")
