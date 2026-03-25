@@ -3,4 +3,3 @@ pandas
 easyocr
 pillow
 numpy
-pdf2image
