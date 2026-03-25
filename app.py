@@ -4,7 +4,6 @@ import numpy as np
 import easyocr
 from PIL import Image
 import re
-from pdf2image import convert_from_bytes
 
 # --- 1. FULL CHEMICAL DATABASE ---
 IR_DB = {
@@ -33,7 +32,7 @@ STRUCTURE_LOGIC = {
 
 # --- 2. PAGE CONFIG ---
 st.set_page_config(page_title="PhD IR Smart-Guardian", layout="wide", page_icon="🔬")
-st.title("🔬 PhD IR Interpretation Engine (v5.0)")
+st.title("🔬 PhD IR Interpretation Engine (Stable v5.1)")
 st.markdown("---")
 
 # --- 3. SIDEBAR UTILITIES ---
@@ -44,23 +43,15 @@ with st.sidebar:
     
     st.divider()
     st.subheader("📲 Sharing & Mobile")
-    st.info("Scan to open on your phone. Select 'Add to Home Screen' for a free App experience.")
+    st.info("To use as a FREE App: Open in phone browser and select 'Add to Home Screen'.")
     qr_url = "https://api.qrserver.com/v1/create-qr-code/?size=150x150&data=https://ir-interpreter-pro.streamlit.app"
     st.image(qr_url)
 
-# --- 4. FILE HANDLING (PDF/IMAGE) ---
-uploaded_file = st.file_uploader("Upload IR Spectrum (Image or PDF)", type=['png', 'jpg', 'jpeg', 'pdf'])
+# --- 4. IMAGE FILE HANDLING ---
+uploaded_file = st.file_uploader("Upload IR Spectrum (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
 
 if uploaded_file:
-    with st.status("Reading File...", expanded=False) as status:
-        if uploaded_file.type == "application/pdf":
-            # Convert PDF bytes to Image
-            images = convert_from_bytes(uploaded_file.read())
-            img = images[0]
-        else:
-            img = Image.open(uploaded_file)
-        status.update(label="File Loaded!", state="complete")
-
+    img = Image.open(uploaded_file)
     st.image(img, caption=f"Processing: {uploaded_file.name}", use_container_width=True)
     
     if st.button("🚀 Analyze Spectrum"):
@@ -81,6 +72,7 @@ if uploaded_file:
             has_ir_axis = any(m in [int(n) for n in all_nums] for m in [4000, 3000, 2000, 1000])
             has_nmr_labels = any(word in all_text for word in ["ppm", "nmr", "shift", "h-nmr"])
             
+            # Block if it's NMR or the scale is wrong
             if has_nmr_labels or (not has_ir_axis and max(all_nums, default=0) < 450):
                 st.error("❌ **NON-IR GRAPH BLOCKED**")
                 st.warning("The Guardian detected an NMR/Carbon scale (ppm). Please upload a valid IR spectrum (cm⁻¹).")
@@ -117,8 +109,7 @@ if uploaded_file:
                         display_df = full_df
 
                     if not display_df.empty:
-                        st.subheader(f"✅ IR Interpretation Results: {sample_id}")
-                        # Advanced Visualization
+                        st.subheader(f"✅ IR Results: {sample_id}")
                         st.dataframe(
                             display_df.style.background_gradient(cmap='Blues', subset=['Experimental Peak']),
                             use_container_width=True
@@ -128,7 +119,7 @@ if uploaded_file:
                         csv = display_df.to_csv(index=False).encode('utf-8')
                         st.download_button("📥 Download Research CSV", csv, f"{sample_id}_analysis.csv", "text/csv")
                         
-                        # Match Success Logic
+                        # Pattern Match Success
                         found_set = set(display_df["Functional Group"].tolist())
                         missing = set(req) - found_set
                         if not missing and target_structure != "All Peaks (No Filter)":
