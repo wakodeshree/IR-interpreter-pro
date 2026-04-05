@@ -32,16 +32,16 @@ STRUCTURE_LOGIC = {
 
 # --- 2. PAGE CONFIG ---
 st.set_page_config(page_title="PhD IR Smart-Guardian", layout="wide")
-st.title("🔬 PhD IR Interpretation Engine (Stable v6.0)")
+st.title("🔬 Official IR Interpretation Engine ")
 st.markdown("---")
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
-    st.header("📝 Lab Notebook")
-    sample_id = st.text_input("Sample ID", "Ref_Compound_001")
+    st.header("📝 Experiment")
+    sample_id = st.text_input("Sample ID", "001")
     target_structure = st.selectbox("Structure Verification:", list(STRUCTURE_LOGIC.keys()))
     st.divider()
-    st.info("Guardian Mode: NMR Graphs are automatically blocked.")
+    st.info("Please Verify Manually too.")
 
 # --- 4. IMAGE HANDLING ---
 uploaded_file = st.file_uploader("Upload IR Spectrum (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
