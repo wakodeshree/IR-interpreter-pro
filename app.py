@@ -103,31 +103,28 @@ if uploaded_file:
             numbers = extract_numbers(ocr_res)
             all_vals = [int(n[0]) for n in numbers]
 
-            # --- IR VALIDATION ---
-            has_ir_axis = any(x in all_vals for x in [4000,3000,2000,1000])
+# --- IR VALIDATION ---
+if len(all_vals) < 3:
+    st.error("❌ Not enough data detected")
+else:
+    peaks = match_ir_peaks(numbers, sample_id)
 
-            if not has_ir_axis:
-                st.error("❌ Not a valid IR spectrum")
-            else:
-                peaks = match_ir_peaks(numbers, sample_id)
+    if peaks:
+        df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
 
-                if peaks:
-                    df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
+        req = STRUCTURE_LOGIC[target_structure]
+        if target_structure != "All Peaks (No Filter)":
+            df = df[df["Functional Group"].isin(req)]
 
-                    req = STRUCTURE_LOGIC[target_structure]
-                    if target_structure != "All Peaks (No Filter)":
-                        df = df[df["Functional Group"].isin(req)]
+        if not df.empty:
+            st.success("✅ IR Peaks Detected")
 
-                    if not df.empty:
-                        st.success("✅ Peaks detected")
+            st.dataframe(df.sort_values("Experimental Peak", ascending=False))
 
-                        st.dataframe(df.sort_values("Experimental Peak", ascending=False))
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("📥 Download CSV", csv, f"{sample_id}.csv")
 
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download CSV", csv, f"{sample_id}.csv")
-
-                    else:
-                        st.warning("⚠️ Peaks detected but not matching structure")
-
-                else:
-                    st.warning("⚠️ No peaks detected")
+        else:
+            st.warning("⚠️ Peaks detected but not matching structure")
+    else:
+        st.warning("⚠️ No peaks detected")
