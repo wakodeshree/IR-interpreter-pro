@@ -4,6 +4,7 @@ import numpy as np
 import easyocr
 from PIL import Image
 import re
+import cv2
 
 # --- 1. FULL CHEMICAL DATABASE ---
 IR_DB = {
@@ -34,6 +35,52 @@ STRUCTURE_LOGIC = {
 st.set_page_config(page_title="PhD IR Smart-Guardian", layout="wide")
 st.title("🔬 Official IR Interpretation Engine ")
 st.markdown("---")
+# --- IMAGE PREPROCESSING ---
+def preprocess_image(pil_img):
+    img = np.array(pil_img)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.equalizeHist(gray)
+    gray = cv2.GaussianBlur(gray, (5,5), 0)
+    return gray
+
+
+# --- IMPROVED OCR EXTRACTION ---
+def extract_numbers(ocr_res):
+    numbers = []
+    for (_, text, prob) in ocr_res:
+        text = text.replace("I","1").replace("l","1").replace("O","0")
+        matches = re.findall(r'\d{3,4}', text)
+        for m in matches:
+            try:
+                val = float(m)
+                if 400 <= val <= 4000:
+                    numbers.append((val, prob))
+            except:
+                continue
+    return numbers
+
+
+# --- SMART PEAK MATCHING ---
+def match_ir_peaks(numbers):
+    peaks = []
+    scale_markers = {4000,3500,3000,2500,2000,1500,1000,500,400}
+    
+    for val, prob in numbers:
+        if int(val) in scale_markers:
+            continue
+        
+        for grp, r in IR_DB.items():
+            tolerance = 20 if val > 2000 else 15
+            
+            if (r[0]-tolerance) <= val <= (r[1]+tolerance):
+                peaks.append({
+                    "Sample ID": sample_id,
+                    "Experimental Peak": val,
+                    "Functional Group": grp,
+                    "Literature Range": f"{r[0]}-{r[1]}",
+                    "Confidence": round(prob,2)
+                })
+    return peaks
 
 # --- 3. SIDEBAR ---
 with st.sidebar:
