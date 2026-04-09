@@ -20,122 +20,94 @@ IR_DB = {
     "C-O Stretch": [1000, 1300], "C-Cl (Halide)": [540, 785]
 }
 
-STRUCTURE_LOGIC = {
-    "All Peaks (No Filter)": [],
-    "Aldehyde": ["Aldehyde C=O", "Aldehyde C-H (Fermi)"],
-    "Carboxylic Acid": ["Carboxylic Acid C=O", "Carboxylic Acid O-H"],
-    "Ester": ["Ester C=O", "C-O Stretch"],
-    "Alcohol/Phenol": ["Alcohol O-H", "C-O Stretch"],
-    "Ketone": ["Ketone C=O"],
-    "Nitro Compound": ["Nitro (-NO2)"],
-    "Amide": ["Amide C=O", "Amine/Amide N-H"]
-}
-
 # --- IMAGE PREPROCESSING ---
-def preprocess_image(pil_img):
-    img = np.array(pil_img)
+def preprocess(img):
+    img = np.array(img)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
     gray = cv2.equalizeHist(gray)
-    gray = cv2.GaussianBlur(gray, (5,5), 0)
+    gray = cv2.GaussianBlur(gray, (3,3), 0)
     return gray
 
-# --- OCR NUMBER EXTRACTION ---
-def extract_numbers(ocr_res):
-    numbers = []
-    for (_, text, prob) in ocr_res:
-        text = text.replace("I","1").replace("l","1").replace("O","0")
-        matches = re.findall(r'\d{3,4}', text)
+# --- ROTATION HANDLING ---
+def get_rotations(img):
+    return [
+        img,
+        cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE),
+        cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
+    ]
 
-        for m in matches:
-            try:
-                val = float(m)
-                if 400 <= val <= 4000:
-                    numbers.append((val, prob))
-            except:
-                continue
-    return numbers
+# --- OCR EXTRACTION ---
+def extract_numbers(reader, images):
+    nums = []
+    
+    for im in images:
+        result = reader.readtext(im, detail=1, paragraph=False)
+        
+        for (_, text, prob) in result:
+            text = text.replace("O","0").replace("I","1").replace("l","1")
+            matches = re.findall(r'\d{3,4}', text)
+            
+            for m in matches:
+                try:
+                    val = float(m)
+                    if 400 <= val <= 4000:
+                        nums.append((val, prob))
+                except:
+                    pass
+    
+    return nums
 
 # --- PEAK MATCHING ---
-def match_ir_peaks(numbers, sample_id):
+def match_peaks(nums):
     peaks = []
-    scale_markers = {4000,3500,3000,2500,2000,1500,1000,500,400}
-
-    for val, prob in numbers:
-        if int(val) in scale_markers:
-            continue
-
+    
+    for val, prob in nums:
         for grp, r in IR_DB.items():
-            tolerance = 20 if val > 2000 else 15
-
-            if (r[0]-tolerance) <= val <= (r[1]+tolerance):
+            tol = 20 if val > 2000 else 15
+            
+            if r[0]-tol <= val <= r[1]+tol:
                 peaks.append({
-                    "Sample ID": sample_id,
-                    "Experimental Peak": val,
-                    "Functional Group": grp,
-                    "Literature Range": f"{r[0]}-{r[1]}",
-                    "Confidence": round(prob, 2)
+                    "Peak (cm⁻¹)": val,
+                    "Group": grp,
+                    "Range": f"{r[0]}-{r[1]}",
+                    "Confidence": round(prob,2)
                 })
+    
     return peaks
 
-# --- STREAMLIT UI ---
-st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
-st.title("🔬 IR Interpretation Engine")
+# --- STREAMLIT ---
+st.set_page_config(layout="wide")
+st.title("🔬 IR Analyzer (Advanced OCR Engine)")
 
-# --- SIDEBAR ---
-with st.sidebar:
-    st.header("📝 Experiment")
-    sample_id = st.text_input("Sample ID", "001")
-    target_structure = st.selectbox("Structure Verification:", list(STRUCTURE_LOGIC.keys()))
-    st.info("Verify manually as well.")
+uploaded = st.file_uploader("Upload IR Spectrum", type=["png","jpg","jpeg"])
 
-# --- FILE UPLOAD ---
-uploaded_file = st.file_uploader("Upload IR Spectrum", type=['png','jpg','jpeg'])
+if uploaded:
+    img = Image.open(uploaded)
+    st.image(img, use_container_width=True)
 
-if uploaded_file:
-    img = Image.open(uploaded_file)
-    st.image(img, caption="Uploaded Spectrum", use_container_width=True)
+    if st.button("Analyze Spectrum"):
+        with st.spinner("Analyzing..."):
 
-    if st.button("🚀 Analyze Spectrum"):
+            processed = preprocess(img)
+            rotations = get_rotations(processed)
 
-        with st.spinner("Processing..."):
-
-            # --- PREPROCESS ---
-            processed_img = preprocess_image(img)
-
-            # --- OCR ---
             reader = easyocr.Reader(['en'], gpu=False)
-            ocr_res = reader.readtext(processed_img, detail=1)
 
-            # --- EXTRACT NUMBERS ---
-            numbers = extract_numbers(ocr_res)
+            numbers = extract_numbers(reader, rotations)
 
             if len(numbers) == 0:
-                st.error("❌ No readable peaks found. Try clearer image.")
+                st.error("❌ OCR failed. Try higher resolution image.")
             else:
-                peaks = match_ir_peaks(numbers, sample_id)
+                peaks = match_peaks(numbers)
 
                 if len(peaks) == 0:
-                    st.warning("⚠️ No IR peaks matched database.")
+                    st.warning("⚠️ Numbers found but no IR match.")
                 else:
-                    df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
+                    df = pd.DataFrame(peaks).drop_duplicates()
 
-                    # --- FILTER BASED ON STRUCTURE ---
-                    req = STRUCTURE_LOGIC[target_structure]
-                    if target_structure != "All Peaks (No Filter)":
-                        df = df[df["Functional Group"].isin(req)]
+                    st.success("✅ Peaks detected")
+                    st.dataframe(df.sort_values("Peak (cm⁻¹)", ascending=False))
 
-                    if df.empty:
-                        st.warning("⚠️ Peaks detected but not matching structure.")
-                    else:
-                        st.success("✅ IR Peaks Detected Successfully")
-
-                        st.dataframe(df.sort_values("Experimental Peak", ascending=False))
-
-                        # --- DOWNLOAD ---
-                        csv = df.to_csv(index=False).encode('utf-8')
-                        st.download_button(
-                            "📥 Download CSV",
-                            csv,
-                            f"{sample_id}_IR_results.csv",
-                            "text/csv"
-                        )
+                    csv = df.to_csv(index=False).encode()
+                    st.download_button("Download CSV", csv, "IR_results.csv")
