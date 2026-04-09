@@ -98,10 +98,12 @@ if uploaded_file:
     st.image(img, caption=f"Processing: {uploaded_file.name}", use_container_width=True)
     
     if st.button("🚀 Analyze Spectrum"):
-        with st.spinner("Machine Scanning & Validating..."):
-           processed_img = preprocess_image(img)
-            reader = easyocr.Reader(['en'], gpu=False)
-            ocr_res = reader.readtext(processed_img, detail=1)
+    with st.spinner("Processing..."):
+
+        processed_img = preprocess_image(img)
+
+        reader = easyocr.Reader(['en'], gpu=False)  
+        ocr_res = reader.readtext(processed_img, detail=1)
             
             # --- SMART GUARDIAN LOGIC ---
            numbers = extract_numbers(ocr_res)
