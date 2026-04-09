@@ -31,10 +31,6 @@ STRUCTURE_LOGIC = {
     "Amide": ["Amide C=O", "Amine/Amide N-H"]
 }
 
-# --- 2. PAGE CONFIG ---
-st.set_page_config(page_title="PhD IR Smart-Guardian", layout="wide")
-st.title("🔬 Official IR Interpretation Engine ")
-st.markdown("---")
 # --- IMAGE PREPROCESSING ---
 def preprocess_image(pil_img):
     img = np.array(pil_img)
@@ -43,8 +39,7 @@ def preprocess_image(pil_img):
     gray = cv2.GaussianBlur(gray, (5,5), 0)
     return gray
 
-
-# --- IMPROVED OCR EXTRACTION ---
+# --- OCR NUMBER EXTRACTION ---
 def extract_numbers(ocr_res):
     numbers = []
     for (_, text, prob) in ocr_res:
@@ -59,19 +54,17 @@ def extract_numbers(ocr_res):
                 continue
     return numbers
 
-
-# --- SMART PEAK MATCHING ---
-def match_ir_peaks(numbers):
+# --- PEAK MATCHING ---
+def match_ir_peaks(numbers, sample_id):
     peaks = []
     scale_markers = {4000,3500,3000,2500,2000,1500,1000,500,400}
-    
+
     for val, prob in numbers:
         if int(val) in scale_markers:
             continue
-        
+
         for grp, r in IR_DB.items():
             tolerance = 20 if val > 2000 else 15
-            
             if (r[0]-tolerance) <= val <= (r[1]+tolerance):
                 peaks.append({
                     "Sample ID": sample_id,
@@ -82,77 +75,59 @@ def match_ir_peaks(numbers):
                 })
     return peaks
 
-# --- 3. SIDEBAR ---
+# --- STREAMLIT UI ---
+st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
+st.title("🔬 IR Interpretation Engine")
+
 with st.sidebar:
     st.header("📝 Experiment")
     sample_id = st.text_input("Sample ID", "001")
     target_structure = st.selectbox("Structure Verification:", list(STRUCTURE_LOGIC.keys()))
-    st.divider()
-    st.info("Please Verify Manually too.")
+    st.info("Verify manually as well.")
 
-# --- 4. IMAGE HANDLING ---
-uploaded_file = st.file_uploader("Upload IR Spectrum (PNG, JPG, JPEG)", type=['png', 'jpg', 'jpeg'])
+uploaded_file = st.file_uploader("Upload IR Spectrum", type=['png','jpg','jpeg'])
 
 if uploaded_file:
     img = Image.open(uploaded_file)
-    st.image(img, caption=f"Processing: {uploaded_file.name}", use_container_width=True)
-    
+    st.image(img, caption="Uploaded Spectrum", use_container_width=True)
+
     if st.button("🚀 Analyze Spectrum"):
-    with st.spinner("Processing..."):
 
-        processed_img = preprocess_image(img)
+        with st.spinner("Processing..."):
 
-        reader = easyocr.Reader(['en'], gpu=False)  
-        ocr_res = reader.readtext(processed_img, detail=1)
-            
-            # --- SMART GUARDIAN LOGIC ---
-           numbers = extract_numbers(ocr_res)
+            processed_img = preprocess_image(img)
+
+            reader = easyocr.Reader(['en'], gpu=False)
+            ocr_res = reader.readtext(processed_img, detail=1)
+
+            numbers = extract_numbers(ocr_res)
             all_vals = [int(n[0]) for n in numbers]
-            
+
+            # --- IR VALIDATION ---
             has_ir_axis = any(x in all_vals for x in [4000,3000,2000,1000])
-            has_nmr_labels = any(word in all_text for word in ["ppm", "nmr", "shift"])
-            
-            if has_nmr_labels or (not has_ir_axis and max(all_nums, default=0) < 450):
-                st.error("❌ **NON-IR GRAPH BLOCKED**")
-                st.warning("The Guardian detected an NMR/Carbon scale. Please upload a valid IR spectrum.")
+
+            if not has_ir_axis:
+                st.error("❌ Not a valid IR spectrum")
             else:
-                # --- PEAK EXTRACTION ---
-                peaks = match_ir_peaks(numbers)
-                
-                for (bbox, text, prob) in ocr_res:
-                    clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
-                    try:
-                        v = float(clean)
-                        if int(v) in scale_markers: continue
-                        
-                        if 400 <= v <= 4000:
-                            for grp, r in IR_DB.items():
-                                if r[0]-15 <= v <= r[1]+15:
-                                    peaks.append({
-                                        "Sample ID": sample_id,
-                                        "Experimental Peak": v, 
-                                        "Functional Group": grp, 
-                                        "Literature Range": f"{r[0]}-{r[1]}"
-                                    })
-                    except: continue
+                peaks = match_ir_peaks(numbers, sample_id)
 
                 if peaks:
-                    full_df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
-                    
+                    df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
+
                     req = STRUCTURE_LOGIC[target_structure]
                     if target_structure != "All Peaks (No Filter)":
-                        display_df = full_df[full_df["Functional Group"].isin(req)]
-                    else:
-                        display_df = full_df
+                        df = df[df["Functional Group"].isin(req)]
 
-                    if not display_df.empty:
-                        st.subheader(f"✅ IR Results: {sample_id}")
-                        # STABLE TABLE (No background styling)
-                        st.table(display_df.sort_values("Experimental Peak", ascending=False))
-                        
-                        csv = display_df.to_csv(index=False).encode('utf-8')
-                        st.download_button("📥 Download CSV", csv, f"{sample_id}.csv", "text/csv")
+                    if not df.empty:
+                        st.success("✅ Peaks detected")
+
+                        st.dataframe(df.sort_values("Experimental Peak", ascending=False))
+
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button("📥 Download CSV", csv, f"{sample_id}.csv")
+
                     else:
-                        st.error(f"Structure verification failed for {target_structure}.")
+                        st.warning("⚠️ Peaks detected but not matching structure")
+
                 else:
-                    st.warning("No identifiable IR peaks detected.")
+                    st.warning("⚠️ No peaks detected")
