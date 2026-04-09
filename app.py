@@ -100,12 +100,12 @@ if uploaded_file:
     if st.button("🚀 Analyze Spectrum"):
         with st.spinner("Machine Scanning & Validating..."):
            processed_img = preprocess_image(img)
-           reader = easyocr.Reader(['en'], gpu=False)
-        ocr_res = reader.readtext(processed_img, detail=1)
+            reader = easyocr.Reader(['en'], gpu=False)
+            ocr_res = reader.readtext(processed_img, detail=1)
             
             # --- SMART GUARDIAN LOGIC ---
            numbers = extract_numbers(ocr_res)
-all_vals = [int(n[0]) for n in numbers]
+            all_vals = [int(n[0]) for n in numbers]
             
             has_ir_axis = any(x in all_vals for x in [4000,3000,2000,1000])
             has_nmr_labels = any(word in all_text for word in ["ppm", "nmr", "shift"])
