@@ -6,7 +6,7 @@ from PIL import Image
 import re
 import cv2
 
-# --- 1. FULL CHEMICAL DATABASE ---
+# --- IR DATABASE ---
 IR_DB = {
     "Alcohol O-H": [3200, 3650], "Carboxylic Acid O-H": [2400, 3400],
     "Amine/Amide N-H": [3100, 3500], "Alkyne ≡C-H": [3250, 3350],
@@ -45,6 +45,7 @@ def extract_numbers(ocr_res):
     for (_, text, prob) in ocr_res:
         text = text.replace("I","1").replace("l","1").replace("O","0")
         matches = re.findall(r'\d{3,4}', text)
+
         for m in matches:
             try:
                 val = float(m)
@@ -65,13 +66,14 @@ def match_ir_peaks(numbers, sample_id):
 
         for grp, r in IR_DB.items():
             tolerance = 20 if val > 2000 else 15
+
             if (r[0]-tolerance) <= val <= (r[1]+tolerance):
                 peaks.append({
                     "Sample ID": sample_id,
                     "Experimental Peak": val,
                     "Functional Group": grp,
                     "Literature Range": f"{r[0]}-{r[1]}",
-                    "Confidence": round(prob,2)
+                    "Confidence": round(prob, 2)
                 })
     return peaks
 
@@ -79,12 +81,14 @@ def match_ir_peaks(numbers, sample_id):
 st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
 st.title("🔬 IR Interpretation Engine")
 
+# --- SIDEBAR ---
 with st.sidebar:
     st.header("📝 Experiment")
     sample_id = st.text_input("Sample ID", "001")
     target_structure = st.selectbox("Structure Verification:", list(STRUCTURE_LOGIC.keys()))
     st.info("Verify manually as well.")
 
+# --- FILE UPLOAD ---
 uploaded_file = st.file_uploader("Upload IR Spectrum", type=['png','jpg','jpeg'])
 
 if uploaded_file:
@@ -95,36 +99,43 @@ if uploaded_file:
 
         with st.spinner("Processing..."):
 
+            # --- PREPROCESS ---
             processed_img = preprocess_image(img)
 
+            # --- OCR ---
             reader = easyocr.Reader(['en'], gpu=False)
             ocr_res = reader.readtext(processed_img, detail=1)
 
+            # --- EXTRACT NUMBERS ---
             numbers = extract_numbers(ocr_res)
-            all_vals = [int(n[0]) for n in numbers]
 
-# --- IR VALIDATION ---
-if len(all_vals) < 3:
-    st.error("❌ Not enough data detected")
-else:
-    peaks = match_ir_peaks(numbers, sample_id)
+            if len(numbers) == 0:
+                st.error("❌ No readable peaks found. Try clearer image.")
+            else:
+                peaks = match_ir_peaks(numbers, sample_id)
 
-    if peaks:
-        df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
+                if len(peaks) == 0:
+                    st.warning("⚠️ No IR peaks matched database.")
+                else:
+                    df = pd.DataFrame(peaks).drop_duplicates(subset=["Experimental Peak"])
 
-        req = STRUCTURE_LOGIC[target_structure]
-        if target_structure != "All Peaks (No Filter)":
-            df = df[df["Functional Group"].isin(req)]
+                    # --- FILTER BASED ON STRUCTURE ---
+                    req = STRUCTURE_LOGIC[target_structure]
+                    if target_structure != "All Peaks (No Filter)":
+                        df = df[df["Functional Group"].isin(req)]
 
-        if not df.empty:
-            st.success("✅ IR Peaks Detected")
+                    if df.empty:
+                        st.warning("⚠️ Peaks detected but not matching structure.")
+                    else:
+                        st.success("✅ IR Peaks Detected Successfully")
 
-            st.dataframe(df.sort_values("Experimental Peak", ascending=False))
+                        st.dataframe(df.sort_values("Experimental Peak", ascending=False))
 
-            csv = df.to_csv(index=False).encode('utf-8')
-            st.download_button("📥 Download CSV", csv, f"{sample_id}.csv")
-
-        else:
-            st.warning("⚠️ Peaks detected but not matching structure")
-    else:
-        st.warning("⚠️ No peaks detected")
+                        # --- DOWNLOAD ---
+                        csv = df.to_csv(index=False).encode('utf-8')
+                        st.download_button(
+                            "📥 Download CSV",
+                            csv,
+                            f"{sample_id}_IR_results.csv",
+                            "text/csv"
+                        )
