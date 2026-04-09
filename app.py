@@ -99,18 +99,15 @@ if uploaded_file:
     
     if st.button("🚀 Analyze Spectrum"):
         with st.spinner("Machine Scanning & Validating..."):
-            reader = easyocr.Reader(['en'])
-            ocr_res = reader.readtext(np.array(img), rotation_info=[90, 270])
+           processed_img = preprocess_image(img)
+           reader = easyocr.Reader(['en'], gpu=False)
+        ocr_res = reader.readtext(processed_img, detail=1)
             
             # --- SMART GUARDIAN LOGIC ---
-            all_text = " ".join([x[1].lower() for x in ocr_res])
-            all_nums = []
-            for x in ocr_res:
-                clean = "".join(re.findall(r'[0-9.]+', x[1]))
-                try: all_nums.append(float(clean))
-                except: continue
+           numbers = extract_numbers(ocr_res)
+all_vals = [int(n[0]) for n in numbers]
             
-            has_ir_axis = any(m in [int(n) for n in all_nums] for m in [4000, 3000, 2000, 1000])
+            has_ir_axis = any(x in all_vals for x in [4000,3000,2000,1000])
             has_nmr_labels = any(word in all_text for word in ["ppm", "nmr", "shift"])
             
             if has_nmr_labels or (not has_ir_axis and max(all_nums, default=0) < 450):
@@ -118,8 +115,7 @@ if uploaded_file:
                 st.warning("The Guardian detected an NMR/Carbon scale. Please upload a valid IR spectrum.")
             else:
                 # --- PEAK EXTRACTION ---
-                peaks = []
-                scale_markers = [4000, 3500, 3000, 2500, 2000, 1500, 1000, 500, 400]
+                peaks = match_ir_peaks(numbers)
                 
                 for (bbox, text, prob) in ocr_res:
                     clean = "".join(re.findall(r'[0-9.]+', text.replace("I","1").replace("l","1")))
