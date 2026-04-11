@@ -10,7 +10,7 @@ api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
 
 if api_key:
     genai.configure(api_key=api_key)
-    model = genai.GenerativeModel('gemini-1.5-flash')
+    model = genai.GenerativeModel('models/gemini-1.5-flash')
 
 # --- UI ---
 st.title("🔬 AI-Powered IR Spectrum Interpreter")
