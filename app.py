@@ -21,8 +21,8 @@ IR_DATABASE = {
 }
 
 def process_ir_image(uploaded_file, sensitivity):
-    # Convert uploaded file to OpenCV image
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=uint8)
+    # --- FIXED LINE BELOW (Added np. prefix) ---
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
     img = cv2.imdecode(file_bytes, 1)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
     
@@ -30,7 +30,6 @@ def process_ir_image(uploaded_file, sensitivity):
     _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
     
     # Extract peak coordinates
-    # We look for the lowest Y value (strongest absorption) for every X
     height, width = thresh.shape
     y_coords = []
     for x in range(width):
@@ -41,48 +40,52 @@ def process_ir_image(uploaded_file, sensitivity):
         else:
             y_coords.append(np.nan)
             
-    # Interpolate missing values
+    # Interpolate missing values for a smooth curve
     y_series = pd.Series(y_coords).interpolate().values
     
     # Peak finding
-    # distance and prominence controlled by 'sensitivity'
     peaks, _ = find_peaks(y_series, distance=20, prominence=sensitivity)
     return y_series, peaks, width
 
 # --- UI LAYOUT ---
+st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
 st.title("🔬 Professional IR Spectrum Interpreter")
-st.sidebar.header("Settings")
 
-uploaded_file = st.sidebar.file_uploader("Upload IR Graph", type=['png', 'jpg', 'jpeg'])
-sensitivity = st.sidebar.slider("Peak Sensitivity", 5, 100, 30)
+st.sidebar.header("Control Panel")
+uploaded_file = st.sidebar.file_uploader("Upload IR Graph (JPEG/PNG)", type=['png', 'jpg', 'jpeg'])
+sensitivity = st.sidebar.slider("Peak Detection Sensitivity", 5, 100, 30)
 
 if uploaded_file:
+    # Process the image
     y_data, peaks, img_width = process_ir_image(uploaded_file, sensitivity)
     
-    st.image(uploaded_file, caption="Original Spectrum", use_column_width=True)
+    # Display the spectrum image
+    st.image(uploaded_file, caption="Uploaded Spectrum", use_container_width=True)
     
-    # Conversion Logic: 4000 to 400 cm-1
+    # Analysis Logic
     results = []
     for p in peaks:
-        # Linear map: x=0 -> 4000, x=width -> 400
+        # Scale: 4000 cm-1 to 400 cm-1 mapping
         wavenumber = 4000 - (p * (3600 / img_width))
         
-        # Identification Logic
-        match = "Unknown / Fingerprint"
+        match = "Fingerprint Region / Unidentified"
         for group, (low, high, desc) in IR_DATABASE.items():
             if low <= wavenumber <= high:
-                match = f"{group} ({desc})"
+                match = f"{group} [{desc}]"
                 break
         
-        results.append({"Wavenumber": round(wavenumber, 1), "Assignment": match})
+        results.append({"Wavenumber (cm⁻¹)": round(wavenumber, 1), "Possible Assignment": match})
 
-    # Display Results
-    st.subheader("Detected Functional Groups")
-    df_results = pd.DataFrame(results)
-    st.table(df_results)
-    
-    # Export CSV
-    csv = df_results.to_csv(index=False).encode('utf-8')
-    st.download_button("Download Data as CSV", csv, "ir_analysis.csv", "text/csv")
+    # Results Table
+    st.subheader("Analysis Results")
+    if results:
+        df_results = pd.DataFrame(results)
+        st.table(df_results)
+        
+        # Export Data
+        csv = df_results.to_csv(index=False).encode('utf-8')
+        st.download_button("📥 Download Analysis as CSV", csv, "ir_report.csv", "text/csv")
+    else:
+        st.warning("No significant peaks detected. Try lowering the sensitivity slider.")
 else:
-    st.info("Please upload an IR spectrum image to begin analysis.")
+    st.info("Upload an IR spectrum image in the sidebar to start the interpretation.")
