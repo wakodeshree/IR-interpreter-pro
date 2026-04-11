@@ -1,90 +1,88 @@
-import cv2
+import streamlit as st
 import numpy as np
+import cv2
+from scipy.signal import find_peaks
 import pandas as pd
-from scipy.signal import find_peaks, savgol_filter
-import tkinter as tk
-from tkinter import filedialog, messagebox
 
-class IRInterpreterApp:
-    def __init__(self, root):
-        self.root = root
-        self.root.title("IR Spectrum Analyzer - Calibration Pro")
+# --- FUNCTIONAL GROUP DATABASE ---
+IR_DATABASE = {
+    "O-H (alcohol)": (3200, 3600, "Strong, Broad"),
+    "O-H (carboxylic acid)": (2500, 3300, "Very Broad"),
+    "N-H (amine)": (3300, 3500, "Medium"),
+    "C-H (alkane)": (2850, 2970, "Medium to Strong"),
+    "C-H (alkene)": (3010, 3095, "Medium"),
+    "C-H (alkyne)": (3300, 3300, "Strong, Sharp"),
+    "C=O (ester)": (1735, 1750, "Strong"),
+    "C=O (ketone)": (1705, 1725, "Strong"),
+    "C=O (aldehyde)": (1720, 1740, "Strong"),
+    "C=C (alkene)": (1640, 1680, "Medium"),
+    "C≡N (nitrile)": (2210, 2260, "Medium"),
+    "C-O (ether)": (1050, 1150, "Strong")
+}
+
+def process_ir_image(uploaded_file, sensitivity):
+    # Convert uploaded file to OpenCV image
+    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=uint8)
+    img = cv2.imdecode(file_bytes, 1)
+    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
+    
+    # Invert and threshold to find the line
+    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
+    
+    # Extract peak coordinates
+    # We look for the lowest Y value (strongest absorption) for every X
+    height, width = thresh.shape
+    y_coords = []
+    for x in range(width):
+        column = thresh[:, x]
+        peaks_in_col = np.where(column > 0)[0]
+        if len(peaks_in_col) > 0:
+            y_coords.append(np.mean(peaks_in_col))
+        else:
+            y_coords.append(np.nan)
+            
+    # Interpolate missing values
+    y_series = pd.Series(y_coords).interpolate().values
+    
+    # Peak finding
+    # distance and prominence controlled by 'sensitivity'
+    peaks, _ = find_peaks(y_series, distance=20, prominence=sensitivity)
+    return y_series, peaks, width
+
+# --- UI LAYOUT ---
+st.title("🔬 Professional IR Spectrum Interpreter")
+st.sidebar.header("Settings")
+
+uploaded_file = st.sidebar.file_uploader("Upload IR Graph", type=['png', 'jpg', 'jpeg'])
+sensitivity = st.sidebar.slider("Peak Sensitivity", 5, 100, 30)
+
+if uploaded_file:
+    y_data, peaks, img_width = process_ir_image(uploaded_file, sensitivity)
+    
+    st.image(uploaded_file, caption="Original Spectrum", use_column_width=True)
+    
+    # Conversion Logic: 4000 to 400 cm-1
+    results = []
+    for p in peaks:
+        # Linear map: x=0 -> 4000, x=width -> 400
+        wavenumber = 4000 - (p * (3600 / img_width))
         
-        # Configuration Variables
-        self.image_path = None
-        self.processed_data = None
+        # Identification Logic
+        match = "Unknown / Fingerprint"
+        for group, (low, high, desc) in IR_DATABASE.items():
+            if low <= wavenumber <= high:
+                match = f"{group} ({desc})"
+                break
         
-        # UI Setup
-        self.setup_ui()
+        results.append({"Wavenumber": round(wavenumber, 1), "Assignment": match})
 
-    def setup_ui(self):
-        btn_load = tk.Button(self.root, text="Load IR Spectrum Image", command=self.load_image)
-        btn_load.pack(pady=20)
-
-        self.status_label = tk.Label(self.root, text="No image loaded", fg="grey")
-        self.status_label.pack()
-
-    def load_image(self):
-        self.image_path = filedialog.askopenfilename(filetypes=[("Image Files", "*.png *.jpg *.jpeg *.tiff")])
-        if self.image_path:
-            self.status_label.config(text=f"Loaded: {self.image_path.split('/')[-1]}", fg="green")
-            self.process_spectrum()
-
-    def process_spectrum(self):
-        # 1. Load and Grayscale
-        img = cv2.imread(self.image_path)
-        gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-        # 2. Thresholding to isolate the spectral line
-        _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
-
-        # 3. Extracting coordinates (Assuming spectrum is the darkest line)
-        points = np.column_stack(np.where(thresh > 0))
-        
-        # Sort by X-axis and average Y for each X to handle line thickness
-        df = pd.DataFrame(points, columns=['y', 'x'])
-        spectrum_line = df.groupby('x')['y'].mean().reset_index()
-
-        # 4. Smoothing (Savitzky-Golay Filter)
-        y_smooth = savgol_filter(spectrum_line['y'], window_length=11, polyorder=3)
-        
-        # 5. Peak Detection (Inverting Y because IR peaks point down)
-        peaks, _ = find_peaks(-y_smooth, prominence=10, distance=20)
-
-        self.analyze_peaks(spectrum_line['x'].iloc[peaks].values)
-
-    def analyze_peaks(self, peak_pixels):
-        """
-        Calibrates pixels to Wavenumbers (cm⁻¹) 
-        Note: This uses a standard 4000-400 cm⁻¹ range logic.
-        """
-        # Placeholder for calibration logic (Width of graph / wavenumber range)
-        # You can adjust these constants based on your specific Shimadzu chart dimensions
-        results = []
-        for p in peak_pixels:
-            wavenumber = self.pixel_to_cm1(p)
-            functional_group = self.lookup_group(wavenumber)
-            results.append((round(wavenumber, 2), functional_group))
-
-        self.display_results(results)
-
-    def pixel_to_cm1(self, pixel_x):
-        # Example linear mapping: 4000 cm-1 at x=0, 400 cm-1 at x=max_width
-        # Adjust based on your UI's calibration slider
-        return 4000 - (pixel_x * 3.6)
-
-    def lookup_group(self, wn):
-        if 3200 <= wn <= 3600: return "O-H Stretch (Alcohol/Phenol)"
-        if 2850 <= wn <= 3000: return "C-H Stretch (Alkane)"
-        if 1670 <= wn <= 1820: return "C=O Stretch (Carbonyl)"
-        if 1600 <= wn <= 1680: return "C=C Stretch (Alkene)"
-        return "Fingerprint Region / Other"
-
-    def display_results(self, results):
-        output = "\n".join([f"{wn} cm⁻¹: {grp}" for wn, grp in results])
-        messagebox.showinfo("Interpretation Results", output)
-
-if __name__ == "__main__":
-    root = tk.Tk()
-    app = IRInterpreterApp(root)
-    root.mainloop()
+    # Display Results
+    st.subheader("Detected Functional Groups")
+    df_results = pd.DataFrame(results)
+    st.table(df_results)
+    
+    # Export CSV
+    csv = df_results.to_csv(index=False).encode('utf-8')
+    st.download_button("Download Data as CSV", csv, "ir_analysis.csv", "text/csv")
+else:
+    st.info("Please upload an IR spectrum image to begin analysis.")
