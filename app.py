@@ -6,7 +6,7 @@ import pandas as pd
 # --- API SETUP ---
 # Securely handle your API Key
 st.sidebar.title("Settings")
-api_key = st.sidebar.text_input("AIzaSyBUi2tbH9ZNaqeSSW7x9gdRid5DdNZtNdY", type="password")
+api_key = st.sidebar.text_input("Enter Gemini API Key", type="password")
 
 if api_key:
     genai.configure(api_key=api_key)
