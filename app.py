@@ -1,113 +1,144 @@
 import streamlit as st
-import pandas as pd
 import numpy as np
-import easyocr
-from PIL import Image
-import re
+import pandas as pd
 import cv2
+from PIL import Image
+from scipy.signal import find_peaks
 
 # --- IR DATABASE ---
 IR_DB = {
-    "Alcohol O-H": [3200, 3650], "Carboxylic Acid O-H": [2400, 3400],
-    "Amine/Amide N-H": [3100, 3500], "Alkyne ≡C-H": [3250, 3350],
-    "Aromatic/Alkene C-H": [3000, 3100], "Alkane C-H": [2850, 2970],
-    "Aldehyde C-H (Fermi)": [2720, 2850], "Nitrile C≡N": [2240, 2260],
-    "Alkyne C≡C": [2100, 2250], "Acid Chloride/Anhydride C=O": [1760, 1810],
-    "Ester C=O": [1730, 1750], "Aldehyde C=O": [1720, 1740],
-    "Ketone C=O": [1705, 1725], "Carboxylic Acid C=O": [1700, 1725],
-    "Amide C=O": [1630, 1680], "Alkene C=C": [1600, 1680],
-    "Aromatic C=C": [1475, 1600], "Nitro (-NO2)": [1350, 1550],
-    "C-O Stretch": [1000, 1300], "C-Cl (Halide)": [540, 785]
+    # --- O-H ---
+    "Alcohol O-H (free)": [3600, 3650],
+    "Alcohol O-H (H-bonded)": [3200, 3550],
+    "Carboxylic Acid O-H": [2500, 3300],
+
+    # --- N-H ---
+    "Primary Amine N-H": [3300, 3500],
+    "Secondary Amine N-H": [3310, 3350],
+    "Amide N-H": [3100, 3500],
+
+    # --- C-H ---
+    "Alkane C-H": [2850, 2960],
+    "Aldehyde C-H": [2720, 2820],
+    "Aromatic C-H": [3000, 3100],
+    "Alkyne ≡C-H": [3250, 3350],
+
+    # --- TRIPLE BOND ---
+    "Nitrile C≡N": [2210, 2260],
+    "Alkyne C≡C": [2100, 2260],
+
+    # --- CARBONYL (VERY IMPORTANT REGION) ---
+    "Acid Chloride C=O": [1780, 1815],
+    "Anhydride C=O": [1740, 1800],
+    "Ester C=O": [1735, 1750],
+    "Aldehyde C=O": [1720, 1740],
+    "Ketone C=O": [1705, 1725],
+    "Carboxylic Acid C=O": [1700, 1725],
+    "Amide C=O": [1630, 1690],
+
+    # --- DOUBLE BOND ---
+    "Alkene C=C": [1620, 1680],
+    "Aromatic C=C": [1450, 1600],
+
+    # --- NITRO ---
+    "NO2 asymmetric": [1520, 1550],
+    "NO2 symmetric": [1340, 1380],
+
+    # --- C-O ---
+    "Alcohol C-O": [1000, 1260],
+    "Ester C-O": [1050, 1300],
+    "Ether C-O": [1050, 1150],
+
+    # --- HALIDES ---
+    "C-Cl": [600, 800],
+    "C-Br": [500, 600],
+    "C-I": [400, 500],
+
+    # --- FINGERPRINT REGION ---
+    "Aromatic substitution": [690, 900],
+    "Out of plane bending": [650, 1000]
 }
 
-# --- IMAGE PREPROCESSING ---
+# --- PREPROCESS ---
 def preprocess(img):
     img = np.array(img)
     gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    gray = cv2.resize(gray, None, fx=2, fy=2, interpolation=cv2.INTER_CUBIC)
-    gray = cv2.equalizeHist(gray)
-    gray = cv2.GaussianBlur(gray, (3,3), 0)
-    return gray
 
-# --- ROTATION HANDLING ---
-def get_rotations(img):
-    return [
-        img,
-        cv2.rotate(img, cv2.ROTATE_90_CLOCKWISE),
-        cv2.rotate(img, cv2.ROTATE_90_COUNTERCLOCKWISE)
-    ]
+    # Edge detection (better than threshold)
+    edges = cv2.Canny(gray, 50, 150)
 
-# --- OCR EXTRACTION ---
-def extract_numbers(reader, images):
-    nums = []
-    
-    for im in images:
-        result = reader.readtext(im, detail=1, paragraph=False)
-        
-        for (_, text, prob) in result:
-            text = text.replace("O","0").replace("I","1").replace("l","1")
-            matches = re.findall(r'\d{3,4}', text)
-            
-            for m in matches:
-                try:
-                    val = float(m)
-                    if 400 <= val <= 4000:
-                        nums.append((val, prob))
-                except:
-                    pass
-    
-    return nums
+    return edges
 
-# --- PEAK MATCHING ---
-def match_peaks(nums):
-    peaks = []
-    
-    for val, prob in nums:
-        for grp, r in IR_DB.items():
-            tol = 20 if val > 2000 else 15
-            
-            if r[0]-tol <= val <= r[1]+tol:
-                peaks.append({
-                    "Peak (cm⁻¹)": val,
-                    "Group": grp,
-                    "Range": f"{r[0]}-{r[1]}",
-                    "Confidence": round(prob,2)
-                })
-    
+# --- EXTRACT CURVE PROFILE ---
+def extract_profile(edges):
+    h, w = edges.shape
+    profile = []
+
+    for x in range(w):
+        col = edges[:, x]
+        y = np.where(col > 0)[0]
+
+        if len(y) > 0:
+            profile.append(np.max(y))  # take bottom-most edge (IR dip)
+        else:
+            profile.append(np.nan)
+
+    return np.array(profile)
+
+# --- SMOOTH SIGNAL ---
+def smooth_signal(signal):
+    return pd.Series(signal).interpolate().rolling(15, min_periods=1).mean().values
+
+# --- DETECT PEAKS ---
+def detect_peaks(signal):
+    inverted = np.max(signal) - signal
+    peaks, _ = find_peaks(inverted, distance=30, prominence=5)
     return peaks
+
+# --- MAP PIXELS TO CM⁻¹ ---
+def map_to_wavenumber(peaks, width):
+    return 4000 - (peaks / width) * (4000 - 500)
+
+# --- MATCH GROUPS ---
+def match_groups(values):
+    results = []
+    for v in values:
+        for grp, r in IR_DB.items():
+            if r[0] <= v <= r[1]:
+                results.append((round(v,1), grp))
+    return results
 
 # --- STREAMLIT ---
 st.set_page_config(layout="wide")
-st.title("🔬 IR Analyzer (Advanced OCR Engine)")
+st.title("🔬 IR Peak Detector (Advanced Version)")
 
-uploaded = st.file_uploader("Upload IR Spectrum", type=["png","jpg","jpeg"])
+file = st.file_uploader("Upload IR Spectrum", type=["png","jpg","jpeg"])
 
-if uploaded:
-    img = Image.open(uploaded)
+if file:
+    img = Image.open(file)
     st.image(img, use_container_width=True)
 
-    if st.button("Analyze Spectrum"):
-        with st.spinner("Analyzing..."):
+    if st.button("Analyze"):
 
-            processed = preprocess(img)
-            rotations = get_rotations(processed)
+        edges = preprocess(img)
+        profile = extract_profile(edges)
+        smooth = smooth_signal(profile)
 
-            reader = easyocr.Reader(['en'], gpu=False)
+        peaks = detect_peaks(smooth)
+        wn = map_to_wavenumber(peaks, len(smooth))
 
-            numbers = extract_numbers(reader, rotations)
+        matches = match_groups(wn)
 
-            if len(numbers) == 0:
-                st.error("❌ OCR failed. Try higher resolution image.")
-            else:
-                peaks = match_peaks(numbers)
+        if len(peaks) == 0:
+            st.error("❌ No peaks detected. Try clearer crop.")
+        else:
+            st.success(f"✅ {len(peaks)} Peaks Detected")
 
-                if len(peaks) == 0:
-                    st.warning("⚠️ Numbers found but no IR match.")
-                else:
-                    df = pd.DataFrame(peaks).drop_duplicates()
+            df = pd.DataFrame({
+                "Wavenumber (cm⁻¹)": np.round(wn,1)
+            })
 
-                    st.success("✅ Peaks detected")
-                    st.dataframe(df.sort_values("Peak (cm⁻¹)", ascending=False))
+            st.dataframe(df)
 
-                    csv = df.to_csv(index=False).encode()
-                    st.download_button("Download CSV", csv, "IR_results.csv")
+            csv = df.to_csv(index=False).encode()
+            st.download_button("Download CSV", csv, "peaks.csv")
