@@ -3,31 +3,22 @@ import numpy as np
 import pandas as pd
 import cv2
 from PIL import Image
-from scipy.signal import find_peaks
+from scipy.signal import find_peaks, savgol_filter
 
 # --- IR DATABASE ---
 IR_DB = {
-    # --- O-H ---
     "Alcohol O-H (free)": [3600, 3650],
     "Alcohol O-H (H-bonded)": [3200, 3550],
     "Carboxylic Acid O-H": [2500, 3300],
-
-    # --- N-H ---
     "Primary Amine N-H": [3300, 3500],
     "Secondary Amine N-H": [3310, 3350],
     "Amide N-H": [3100, 3500],
-
-    # --- C-H ---
     "Alkane C-H": [2850, 2960],
     "Aldehyde C-H": [2720, 2820],
     "Aromatic C-H": [3000, 3100],
     "Alkyne ≡C-H": [3250, 3350],
-
-    # --- TRIPLE BOND ---
     "Nitrile C≡N": [2210, 2260],
     "Alkyne C≡C": [2100, 2260],
-
-    # --- CARBONYL (VERY IMPORTANT REGION) ---
     "Acid Chloride C=O": [1780, 1815],
     "Anhydride C=O": [1740, 1800],
     "Ester C=O": [1735, 1750],
@@ -35,110 +26,93 @@ IR_DB = {
     "Ketone C=O": [1705, 1725],
     "Carboxylic Acid C=O": [1700, 1725],
     "Amide C=O": [1630, 1690],
-
-    # --- DOUBLE BOND ---
     "Alkene C=C": [1620, 1680],
     "Aromatic C=C": [1450, 1600],
-
-    # --- NITRO ---
     "NO2 asymmetric": [1520, 1550],
     "NO2 symmetric": [1340, 1380],
-
-    # --- C-O ---
     "Alcohol C-O": [1000, 1260],
     "Ester C-O": [1050, 1300],
     "Ether C-O": [1050, 1150],
-
-    # --- HALIDES ---
     "C-Cl": [600, 800],
-    "C-Br": [500, 600],
-    "C-I": [400, 500],
-
-    # --- FINGERPRINT REGION ---
-    "Aromatic substitution": [690, 900],
-    "Out of plane bending": [650, 1000]
 }
 
-# --- PREPROCESS ---
-def preprocess(img):
-    img = np.array(img)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-
-    # Edge detection (better than threshold)
-    edges = cv2.Canny(gray, 50, 150)
-
-    return edges
-
-# --- EXTRACT CURVE PROFILE ---
-def extract_profile(edges):
-    h, w = edges.shape
+# --- IMAGE PROCESSING ---
+def get_spectrum_line(img):
+    img_np = np.array(img.convert('L'))
+    # Threshold to find the black line
+    _, thresh = cv2.threshold(img_np, 150, 255, cv2.THRESH_BINARY_INV)
+    
+    h, w = thresh.shape
     profile = []
-
     for x in range(w):
-        col = edges[:, x]
-        y = np.where(col > 0)[0]
-
-        if len(y) > 0:
-            profile.append(np.max(y))  # take bottom-most edge (IR dip)
+        col = thresh[:, x]
+        y_indices = np.where(col > 0)[0]
+        if len(y_indices) > 0:
+            profile.append(np.max(y_indices)) # Bottom-most pixel (the peak dip)
         else:
             profile.append(np.nan)
+    
+    # Clean up signal
+    s = pd.Series(profile).interpolate(limit_direction='both').values
+    # Smooth with Savgol filter to maintain peak integrity
+    smooth = savgol_filter(s, window_length=11, polyorder=3)
+    return smooth
 
-    return np.array(profile)
+def match_functional_groups(wavenumber):
+    matches = []
+    for group, rng in IR_DB.items():
+        if rng[0] <= wavenumber <= rng[1]:
+            matches.append(group)
+    return " / ".join(matches) if matches else "Fingerprint/Unknown"
 
-# --- SMOOTH SIGNAL ---
-def smooth_signal(signal):
-    return pd.Series(signal).interpolate().rolling(15, min_periods=1).mean().values
+# --- UI SETUP ---
+st.set_page_config(page_title="IR Interpret Pro", layout="wide")
+st.title("🔬 Advanced IR Spectrum Peak Interpreter")
 
-# --- DETECT PEAKS ---
-def detect_peaks(signal):
-    inverted = np.max(signal) - signal
-    peaks, _ = find_peaks(inverted, distance=30, prominence=5)
-    return peaks
+with st.sidebar:
+    st.header("Calibration")
+    start_wn = st.number_input("Left Axis (cm⁻¹)", value=4000)
+    end_wn = st.number_input("Right Axis (cm⁻¹)", value=400)
+    st.divider()
+    sensitivity = st.slider("Peak Sensitivity (Prominence)", 1, 100, 20)
 
-# --- MAP PIXELS TO CM⁻¹ ---
-def map_to_wavenumber(peaks, width):
-    return 4000 - (peaks / width) * (4000 - 500)
+uploaded_file = st.file_uploader("Upload an IR Spectrum Image (Crop to the chart area for best results)", type=["jpg", "png", "jpeg"])
 
-# --- MATCH GROUPS ---
-def match_groups(values):
-    results = []
-    for v in values:
-        for grp, r in IR_DB.items():
-            if r[0] <= v <= r[1]:
-                results.append((round(v,1), grp))
-    return results
-
-# --- STREAMLIT ---
-st.set_page_config(layout="wide")
-st.title("🔬 IR Peak Detector (Advanced Version)")
-
-file = st.file_uploader("Upload IR Spectrum", type=["png","jpg","jpeg"])
-
-if file:
-    img = Image.open(file)
-    st.image(img, use_container_width=True)
-
-    if st.button("Analyze"):
-
-        edges = preprocess(img)
-        profile = extract_profile(edges)
-        smooth = smooth_signal(profile)
-
-        peaks = detect_peaks(smooth)
-        wn = map_to_wavenumber(peaks, len(smooth))
-
-        matches = match_groups(wn)
-
-        if len(peaks) == 0:
-            st.error("❌ No peaks detected. Try clearer crop.")
-        else:
-            st.success(f"✅ {len(peaks)} Peaks Detected")
-
-            df = pd.DataFrame({
-                "Wavenumber (cm⁻¹)": np.round(wn,1)
-            })
-
-            st.dataframe(df)
-
-            csv = df.to_csv(index=False).encode()
-            st.download_button("Download CSV", csv, "peaks.csv")
+if uploaded_file:
+    img = Image.open(uploaded_file)
+    st.image(img, caption="Uploaded Spectrum", use_container_width=True)
+    
+    if st.button("Analyze Spectrum"):
+        with st.spinner("Analyzing peaks..."):
+            try:
+                line = get_spectrum_line(img)
+                width = len(line)
+                
+                # Peaks in IR are "dips" - in image coordinates, dips have higher Y values
+                peaks, props = find_peaks(line, prominence=sensitivity, distance=20)
+                
+                if len(peaks) > 0:
+                    # Map pixels to wavenumbers
+                    # Formula: Start - (percentage across image * range)
+                    wn_values = start_wn - (peaks / width) * (start_wn - end_wn)
+                    
+                    results = []
+                    for val in wn_values:
+                        results.append({
+                            "Wavenumber (cm⁻¹)": round(val, 1),
+                            "Possible Interpretation": match_functional_groups(val)
+                        })
+                    
+                    df = pd.DataFrame(results).sort_values("Wavenumber (cm⁻¹)", ascending=False)
+                    
+                    st.success(f"Detected {len(peaks)} significant peaks.")
+                    st.table(df)
+                    
+                    # Download section
+                    csv = df.to_csv(index=False).encode('utf-8')
+                    st.download_button("Download Analysis (CSV)", csv, "ir_analysis.csv", "text/csv")
+                else:
+                    st.warning("No peaks detected. Try adjusting the sensitivity slider in the sidebar.")
+            
+            except Exception as e:
+                st.error(f"Error processing image: {e}")
