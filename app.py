@@ -1,91 +1,108 @@
 import streamlit as st
-import numpy as np
 import cv2
-from scipy.signal import find_peaks
+import numpy as np
 import pandas as pd
+from PIL import Image
+from scipy.signal import find_peaks
+import easyocr
+import re
 
-# --- FUNCTIONAL GROUP DATABASE ---
-IR_DATABASE = {
-    "O-H (alcohol)": (3200, 3600, "Strong, Broad"),
-    "O-H (carboxylic acid)": (2500, 3300, "Very Broad"),
-    "N-H (amine)": (3300, 3500, "Medium"),
-    "C-H (alkane)": (2850, 2970, "Medium to Strong"),
-    "C-H (alkene)": (3010, 3095, "Medium"),
-    "C-H (alkyne)": (3300, 3300, "Strong, Sharp"),
-    "C=O (ester)": (1735, 1750, "Strong"),
-    "C=O (ketone)": (1705, 1725, "Strong"),
-    "C=O (aldehyde)": (1720, 1740, "Strong"),
-    "C=C (alkene)": (1640, 1680, "Medium"),
-    "C≡N (nitrile)": (2210, 2260, "Medium"),
-    "C-O (ether)": (1050, 1150, "Strong")
-}
+st.set_page_config(page_title="IR Analyzer (Advanced OCR)", layout="wide")
 
-def process_ir_image(uploaded_file, sensitivity):
-    # --- FIXED LINE BELOW (Added np. prefix) ---
-    file_bytes = np.asarray(bytearray(uploaded_file.read()), dtype=np.uint8)
-    img = cv2.imdecode(file_bytes, 1)
-    gray = cv2.cvtColor(img, cv2.COLOR_BGR2GRAY)
-    
-    # Invert and threshold to find the line
-    _, thresh = cv2.threshold(gray, 150, 255, cv2.THRESH_BINARY_INV)
-    
-    # Extract peak coordinates
-    height, width = thresh.shape
-    y_coords = []
-    for x in range(width):
-        column = thresh[:, x]
-        peaks_in_col = np.where(column > 0)[0]
-        if len(peaks_in_col) > 0:
-            y_coords.append(np.mean(peaks_in_col))
-        else:
-            y_coords.append(np.nan)
-            
-    # Interpolate missing values for a smooth curve
-    y_series = pd.Series(y_coords).interpolate().values
-    
-    # Peak finding
-    peaks, _ = find_peaks(y_series, distance=20, prominence=sensitivity)
-    return y_series, peaks, width
+st.title("🔬 IR Spectrum Analyzer (OCR + Rotation + Full DB)")
 
-# --- UI LAYOUT ---
-st.set_page_config(page_title="IR Interpreter Pro", layout="wide")
-st.title("🔬 Professional IR Spectrum Interpreter")
+uploaded_file = st.file_uploader("Upload IR Spectrum", type=["png", "jpg", "jpeg"])
 
-st.sidebar.header("Control Panel")
-uploaded_file = st.sidebar.file_uploader("Upload IR Graph (JPEG/PNG)", type=['png', 'jpg', 'jpeg'])
-sensitivity = st.sidebar.slider("Peak Detection Sensitivity", 5, 100, 30)
+# Initialize OCR
+reader = easyocr.Reader(['en'], gpu=False)
+
+# 🔥 Extended IR Database
+IR_DB = [
+    (3700, 3200, "O-H stretch", "Alcohol / Phenol"),
+    (3500, 3300, "N-H stretch", "Amine"),
+    (3300, 3000, "C-H stretch", "Alkane"),
+    (3100, 3000, "C-H stretch", "Aromatic"),
+    (2260, 2220, "C≡N stretch", "Nitrile"),
+    (2150, 2100, "C≡C stretch", "Alkyne"),
+    (1750, 1700, "C=O stretch", "Ester / Ketone"),
+    (1690, 1640, "C=O stretch", "Amide"),
+    (1680, 1600, "C=C stretch", "Alkene"),
+    (1600, 1450, "C=C stretch", "Aromatic ring"),
+    (1300, 1000, "C-O stretch", "Alcohol / Ether"),
+    (900, 650, "C-H bending", "Aromatic"),
+]
+
+# 🧠 OCR extraction
+def extract_text(image):
+    results = reader.readtext(np.array(image))
+    text = " ".join([res[1] for res in results])
+    return text
+
+# 🔍 Extract numbers (cm⁻¹ peaks)
+def extract_peaks_from_text(text):
+    numbers = re.findall(r'\d{3,4}', text)
+    peaks = [int(num) for num in numbers if 400 <= int(num) <= 4000]
+    return peaks
+
+# 📊 Match with IR DB
+def interpret_peaks(peaks):
+    data = []
+    sr = 1
+
+    for peak in peaks:
+        for high, low, group, outcome in IR_DB:
+            if low <= peak <= high:
+                data.append([
+                    sr,
+                    peak,
+                    f"{low}-{high}",
+                    group,
+                    outcome
+                ])
+                sr += 1
+                break
+
+    return pd.DataFrame(data, columns=[
+        "SrNo", "ObservedPeak", "LiteratureRange", "KeyFindings", "Outcome"
+    ])
+
+# 🔄 Rotate image
+def rotate_image(image, angle):
+    return image.rotate(angle, expand=True)
 
 if uploaded_file:
-    # Process the image
-    y_data, peaks, img_width = process_ir_image(uploaded_file, sensitivity)
-    
-    # Display the spectrum image
-    st.image(uploaded_file, caption="Uploaded Spectrum", use_container_width=True)
-    
-    # Analysis Logic
-    results = []
-    for p in peaks:
-        # Scale: 4000 cm-1 to 400 cm-1 mapping
-        wavenumber = 4000 - (p * (3600 / img_width))
-        
-        match = "Fingerprint Region / Unidentified"
-        for group, (low, high, desc) in IR_DATABASE.items():
-            if low <= wavenumber <= high:
-                match = f"{group} [{desc}]"
-                break
-        
-        results.append({"Wavenumber (cm⁻¹)": round(wavenumber, 1), "Possible Assignment": match})
+    image = Image.open(uploaded_file)
 
-    # Results Table
-    st.subheader("Analysis Results")
-    if results:
-        df_results = pd.DataFrame(results)
-        st.table(df_results)
-        
-        # Export Data
-        csv = df_results.to_csv(index=False).encode('utf-8')
-        st.download_button("📥 Download Analysis as CSV", csv, "ir_report.csv", "text/csv")
-    else:
-        st.warning("No significant peaks detected. Try lowering the sensitivity slider.")
-else:
-    st.info("Upload an IR spectrum image in the sidebar to start the interpretation.")
+    st.image(image, caption="Original Image", use_column_width=True)
+
+    if st.button("Analyze Spectrum"):
+
+        st.write("🔄 Processing multiple orientations...")
+
+        images = [
+            image,
+            rotate_image(image, 90),
+            rotate_image(image, 270)
+        ]
+
+        all_peaks = []
+
+        for idx, img in enumerate(images):
+            text = extract_text(img)
+            peaks = extract_peaks_from_text(text)
+            all_peaks.extend(peaks)
+
+        # Remove duplicates
+        all_peaks = list(set(all_peaks))
+
+        df = interpret_peaks(all_peaks)
+
+        if not df.empty:
+            st.success("Analysis Complete ✅")
+            st.dataframe(df)
+
+            csv = df.to_csv(index=False).encode('utf-8')
+            st.download_button("Download CSV", csv, "ir_analysis.csv", "text/csv")
+
+        else:
+            st.warning("No peaks detected. Try clearer image.")
